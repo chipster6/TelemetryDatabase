@@ -112,8 +112,9 @@ export class TelemetryAnalyticsService {
 
     } catch (error) {
       console.error('Error processing event buffer:', error);
-      // Re-add events to buffer for retry
-      this.eventBuffer.unshift(...events);
+      // Re-add events to buffer for retry (fix variable scope)
+      const eventsToRetry = events;
+      this.eventBuffer.unshift(...eventsToRetry);
     }
   }
 

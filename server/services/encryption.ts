@@ -1,4 +1,4 @@
-import * as forge from 'node-forge';
+import forge from 'node-forge';
 import * as crypto from 'crypto';
 import * as zlib from 'zlib';
 import { promisify } from 'util';
@@ -31,7 +31,7 @@ export class PostQuantumEncryption {
    * Generate a new post-quantum resistant key pair using Kyber-like lattice-based cryptography
    */
   generateKeyPair(): string {
-    const keyId = forge.util.encode64(forge.random.getBytesSync(16));
+    const keyId = crypto.randomBytes(16).toString('base64');
     
     // Generate lattice-based key material (simplified implementation)
     const dimension = 1024; // Kyber parameter
@@ -57,8 +57,8 @@ export class PostQuantumEncryption {
     );
     
     const keyPair: QuantumKeyPair = {
-      publicKey: forge.util.encode64(JSON.stringify(publicKey)),
-      privateKey: forge.util.encode64(JSON.stringify(privateKey)),
+      publicKey: Buffer.from(JSON.stringify(publicKey)).toString('base64'),
+      privateKey: Buffer.from(JSON.stringify(privateKey)).toString('base64'),
       keyId
     };
     

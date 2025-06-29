@@ -4,6 +4,10 @@ import { WebSocketServer, WebSocket } from "ws";
 import { storage } from "./storage";
 import { openaiService } from "./services/openai";
 import { biometricService } from "./services/biometric";
+import { vectorDatabase } from "./services/vector-database";
+import { analyticsService } from "./services/analytics";
+import { cloudExportService } from "./services/cloud-export";
+import { postQuantumEncryption } from "./services/encryption";
 import { z } from "zod";
 import { insertPromptSessionSchema, insertPromptTemplateSchema } from "@shared/schema";
 
@@ -220,6 +224,189 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(updated);
     } catch (error) {
       res.status(500).json({ error: "Failed to update device connection" });
+    }
+  });
+
+  // Vector Database API Endpoints
+  
+  // Store document in vector database
+  app.post("/api/vector/store", async (req, res) => {
+    try {
+      const document = req.body;
+      
+      // Record telemetry event
+      await analyticsService.recordEvent('user_interaction', {
+        action: 'store_document',
+        contentType: document.metadata.contentType,
+        size: document.content.length
+      }, {
+        userId: document.metadata.userId,
+        sessionId: document.metadata.sessionId
+      });
+
+      const documentId = await vectorDatabase.storeDocument(document);
+      
+      res.json({ 
+        success: true, 
+        documentId,
+        encrypted: document.metadata.contentType === 'biometric' || document.metadata.contentType === 'correlation'
+      });
+    } catch (error) {
+      console.error('Store document error:', error);
+      res.status(500).json({ 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Storage failed' 
+      });
+    }
+  });
+
+  // Semantic search
+  app.post("/api/vector/search", async (req, res) => {
+    try {
+      const { query, options = {} } = req.body;
+      
+      // Record search telemetry
+      await analyticsService.recordEvent('user_interaction', {
+        action: 'semantic_search',
+        query,
+        options
+      });
+
+      const results = await vectorDatabase.semanticSearch(query, options);
+      
+      res.json({ 
+        success: true, 
+        results,
+        count: results.length,
+        query
+      });
+    } catch (error) {
+      console.error('Search error:', error);
+      res.status(500).json({ 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Search failed' 
+      });
+    }
+  });
+
+  // Get cognitive correlations analysis
+  app.get("/api/analytics/correlations/:userId", async (req, res) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      const timeRange = {
+        start: parseInt(req.query.start as string) || Date.now() - (7 * 24 * 60 * 60 * 1000),
+        end: parseInt(req.query.end as string) || Date.now()
+      };
+
+      const analysis = await analyticsService.analyzeCognitiveCorrelations(userId, timeRange);
+      
+      res.json({ 
+        success: true, 
+        analysis,
+        timeRange
+      });
+    } catch (error) {
+      console.error('Correlation analysis error:', error);
+      res.status(500).json({ 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Analysis failed' 
+      });
+    }
+  });
+
+  // Get performance metrics
+  app.get("/api/analytics/performance", async (req, res) => {
+    try {
+      const userId = req.query.userId ? parseInt(req.query.userId as string) : undefined;
+      const timeRange = req.query.start && req.query.end ? {
+        start: parseInt(req.query.start as string),
+        end: parseInt(req.query.end as string)
+      } : undefined;
+
+      const metrics = await analyticsService.getPerformanceMetrics(userId, timeRange);
+      
+      res.json({ 
+        success: true, 
+        metrics
+      });
+    } catch (error) {
+      console.error('Performance metrics error:', error);
+      res.status(500).json({ 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Metrics calculation failed' 
+      });
+    }
+  });
+
+  // Vector database statistics
+  app.get("/api/vector/stats", async (req, res) => {
+    try {
+      const stats = vectorDatabase.getStats();
+      
+      res.json({ 
+        success: true, 
+        stats
+      });
+    } catch (error) {
+      console.error('Stats error:', error);
+      res.status(500).json({ 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Stats retrieval failed' 
+      });
+    }
+  });
+
+  // Cloud export operations
+  app.post("/api/cloud/export/:type", async (req, res) => {
+    try {
+      const type = req.params.type as 'compression' | 'backup';
+      
+      if (type !== 'compression' && type !== 'backup') {
+        return res.status(400).json({ 
+          success: false, 
+          error: 'Invalid export type. Must be "compression" or "backup"' 
+        });
+      }
+
+      const jobId = await cloudExportService.triggerManualExport(type);
+      
+      res.json({ 
+        success: true, 
+        jobId,
+        type
+      });
+    } catch (error) {
+      console.error('Cloud export error:', error);
+      res.status(500).json({ 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Export failed' 
+      });
+    }
+  });
+
+  // Get system status
+  app.get("/api/system/status", async (req, res) => {
+    try {
+      const status = cloudExportService.getSystemStatus();
+      const encryptionKeyId = postQuantumEncryption.getCurrentKeyId();
+      
+      res.json({ 
+        success: true, 
+        status: {
+          ...status,
+          encryption: {
+            currentKeyId: encryptionKeyId,
+            algorithm: 'post-quantum-resistant'
+          },
+          timestamp: Date.now()
+        }
+      });
+    } catch (error) {
+      console.error('System status error:', error);
+      res.status(500).json({ 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Status retrieval failed' 
+      });
     }
   });
 

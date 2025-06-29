@@ -132,14 +132,14 @@ export class WeaviateVectorDatabase {
       searchTerms.forEach(term => {
         const matchingIds = this.searchIndex.get(term);
         if (matchingIds) {
-          matchingIds.forEach(id => candidateIds.add(id));
+          Array.from(matchingIds).forEach(id => candidateIds.add(id));
         }
       });
 
       const results: SearchResult[] = [];
 
       // Score and filter candidates
-      for (const docId of candidateIds) {
+      for (const docId of Array.from(candidateIds)) {
         const document = this.documents.get(docId);
         if (!document) continue;
 
