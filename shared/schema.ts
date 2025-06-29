@@ -111,3 +111,21 @@ export type CognitiveCorrelation = typeof cognitiveCorrelations.$inferSelect;
 export type InsertCognitiveCorrelation = z.infer<typeof insertCognitiveCorrelationSchema>;
 export type DeviceConnection = typeof deviceConnections.$inferSelect;
 export type InsertDeviceConnection = z.infer<typeof insertDeviceConnectionSchema>;
+
+// Vector Database Types
+export interface VectorDocument {
+  id: string;
+  content: string;
+  metadata: {
+    timestamp: number;
+    userId?: number;
+    sessionId?: number;
+    biometricContext?: any;
+    contentType: 'prompt' | 'response' | 'biometric' | 'correlation' | 'telemetry';
+    cognitiveComplexity?: number;
+    eventType?: string;
+    source?: string;
+  };
+  vector?: number[];
+  encrypted?: boolean;
+}

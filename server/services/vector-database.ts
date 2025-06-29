@@ -1,5 +1,5 @@
-import weaviate, { WeaviateClient, ApiKey } from 'weaviate-ts-client';
 import { postQuantumEncryption, EncryptedData } from './encryption.js';
+import { VectorDocument } from '../../shared/schema.js';
 import * as zlib from 'zlib';
 import { promisify } from 'util';
 import { v4 as uuidv4 } from 'uuid';
@@ -7,19 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 const gzip = promisify(zlib.gzip);
 const gunzip = promisify(zlib.gunzip);
 
-export interface VectorDocument {
-  id: string;
-  content: string;
-  metadata: {
-    timestamp: number;
-    userId?: number;
-    sessionId?: number;
-    biometricContext?: any;
-    contentType: 'prompt' | 'response' | 'biometric' | 'correlation';
-  };
-  vector?: number[];
-  encrypted?: boolean;
-}
+
 
 export interface SearchResult {
   id: string;
@@ -38,127 +26,29 @@ export interface ShardInfo {
 }
 
 export class WeaviateVectorDatabase {
-  private client!: WeaviateClient;
+  private documents: Map<string, VectorDocument> = new Map();
   private shards: Map<string, ShardInfo> = new Map();
   private compressionThreshold = 10000; // Documents per shard before compression
   private currentShard = 'shard_' + Date.now();
+  private searchIndex: Map<string, Set<string>> = new Map(); // Simple inverted index
 
   constructor() {
-    this.initializeClient();
-    this.initializeSchema();
     this.initializeShard(this.currentShard);
   }
 
-  private initializeClient() {
-    // Initialize embedded Weaviate client
-    this.client = weaviate.client({
-      scheme: 'http',
-      host: 'localhost:8080', // Embedded instance
-      apiKey: new ApiKey(process.env.WEAVIATE_API_KEY || 'embedded-key'),
+  /**
+   * Build search index for semantic search
+   */
+  private buildSearchIndex(document: VectorDocument): void {
+    const content = document.content.toLowerCase();
+    const words = content.split(/\W+/).filter(word => word.length > 2);
+    
+    words.forEach(word => {
+      if (!this.searchIndex.has(word)) {
+        this.searchIndex.set(word, new Set());
+      }
+      this.searchIndex.get(word)!.add(document.id);
     });
-  }
-
-  private async initializeSchema() {
-    try {
-      // Create BiometricData class
-      const biometricClass = {
-        class: 'BiometricData',
-        description: 'Encrypted biometric data with semantic search capabilities',
-        vectorizer: 'text2vec-openai',
-        moduleConfig: {
-          'text2vec-openai': {
-            model: 'ada',
-            modelVersion: '002',
-            type: 'text'
-          }
-        },
-        properties: [
-          {
-            name: 'content',
-            dataType: ['text'],
-            description: 'Serialized biometric data content'
-          },
-          {
-            name: 'metadata',
-            dataType: ['object'],
-            description: 'Document metadata including timestamps and context'
-          },
-          {
-            name: 'encrypted',
-            dataType: ['boolean'],
-            description: 'Whether the content is encrypted'
-          },
-          {
-            name: 'contentType',
-            dataType: ['string'],
-            description: 'Type of content: prompt, response, biometric, correlation'
-          },
-          {
-            name: 'userId',
-            dataType: ['int'],
-            description: 'Associated user ID'
-          },
-          {
-            name: 'sessionId',
-            dataType: ['int'],
-            description: 'Associated session ID'
-          },
-          {
-            name: 'timestamp',
-            dataType: ['date'],
-            description: 'Document creation timestamp'
-          }
-        ]
-      };
-
-      await this.client.schema.classCreator().withClass(biometricClass).do();
-
-      // Create PromptData class
-      const promptClass = {
-        class: 'PromptData',
-        description: 'AI prompts and responses with biometric context',
-        vectorizer: 'text2vec-openai',
-        moduleConfig: {
-          'text2vec-openai': {
-            model: 'ada',
-            modelVersion: '002',
-            type: 'text'
-          }
-        },
-        properties: [
-          {
-            name: 'content',
-            dataType: ['text'],
-            description: 'Prompt or response content'
-          },
-          {
-            name: 'metadata',
-            dataType: ['object'],
-            description: 'Context metadata'
-          },
-          {
-            name: 'biometricContext',
-            dataType: ['object'],
-            description: 'Associated biometric measurements'
-          },
-          {
-            name: 'contentType',
-            dataType: ['string'],
-            description: 'prompt or response'
-          },
-          {
-            name: 'cognitiveComplexity',
-            dataType: ['number'],
-            description: 'Calculated cognitive complexity score'
-          }
-        ]
-      };
-
-      await this.client.schema.classCreator().withClass(promptClass).do();
-
-    } catch (error) {
-      console.log('Schema already exists or creation failed:', error.message);
-    }
   }
 
   private initializeShard(shardId: string) {
@@ -187,40 +77,19 @@ export class WeaviateVectorDatabase {
         isEncrypted = true;
       }
 
-      // Determine target class
-      const className = document.metadata.contentType === 'prompt' || 
-                       document.metadata.contentType === 'response' 
-                       ? 'PromptData' : 'BiometricData';
-
-      // Create vector document
-      const vectorDoc = {
+      // Create enhanced document with encryption and metadata
+      const enhancedDocument: VectorDocument = {
+        ...document,
         id: document.id || uuidv4(),
-        class: className,
-        properties: {
-          content: processedContent,
-          metadata: document.metadata,
-          encrypted: isEncrypted,
-          contentType: document.metadata.contentType,
-          userId: document.metadata.userId,
-          sessionId: document.metadata.sessionId,
-          timestamp: new Date(document.metadata.timestamp).toISOString(),
-          ...(document.metadata.contentType === 'prompt' || document.metadata.contentType === 'response' 
-            ? {
-                biometricContext: document.metadata.biometricContext,
-                cognitiveComplexity: document.metadata.cognitiveComplexity || 0
-              } 
-            : {})
-        },
-        vector: document.vector
+        content: processedContent,
+        encrypted: isEncrypted
       };
 
-      // Store in current shard
-      await this.client.data.creator()
-        .withClassName(className)
-        .withId(vectorDoc.id)
-        .withProperties(vectorDoc.properties)
-        .withVector(vectorDoc.vector)
-        .do();
+      // Store in memory with sharding
+      this.documents.set(enhancedDocument.id, enhancedDocument);
+      
+      // Build search index
+      this.buildSearchIndex(enhancedDocument);
 
       // Update shard info
       const shard = this.shards.get(this.currentShard);
@@ -234,10 +103,10 @@ export class WeaviateVectorDatabase {
         }
       }
 
-      return vectorDoc.id;
+      return enhancedDocument.id;
 
     } catch (error) {
-      console.error('Error storing document:', error);
+      console.error('Error storing document:', error instanceof Error ? error.message : 'Unknown error');
       throw error;
     }
   }
@@ -253,87 +122,79 @@ export class WeaviateVectorDatabase {
     includeBiometric?: boolean;
   } = {}): Promise<SearchResult[]> {
     try {
-      const { limit = 10, filter, contentTypes, userId, includeBiometric = true } = options;
+      const { limit = 10, contentTypes, userId } = options;
 
-      // Build where filter
-      let whereFilter: any = {};
-      
-      if (contentTypes && contentTypes.length > 0) {
-        whereFilter = {
-          path: ['contentType'],
-          operator: 'Equal',
-          valueString: contentTypes[0] // Simplified for single type
-        };
-      }
+      // Parse query into search terms
+      const searchTerms = query.toLowerCase().split(/\W+/).filter(term => term.length > 2);
+      const candidateIds = new Set<string>();
 
-      if (userId) {
-        whereFilter = {
-          operator: 'And',
-          operands: [
-            whereFilter,
-            {
-              path: ['userId'],
-              operator: 'Equal',
-              valueInt: userId
-            }
-          ]
-        };
-      }
-
-      // Search both classes if needed
-      const classes = ['PromptData'];
-      if (includeBiometric) {
-        classes.push('BiometricData');
-      }
+      // Find documents matching search terms
+      searchTerms.forEach(term => {
+        const matchingIds = this.searchIndex.get(term);
+        if (matchingIds) {
+          matchingIds.forEach(id => candidateIds.add(id));
+        }
+      });
 
       const results: SearchResult[] = [];
 
-      for (const className of classes) {
-        try {
-          const response = await this.client.graphql.get()
-            .withClassName(className)
-            .withFields('content metadata encrypted contentType userId sessionId timestamp _additional { id score vector }')
-            .withNearText({ concepts: [query] })
-            .withLimit(limit)
-            .withWhere(whereFilter)
-            .do();
+      // Score and filter candidates
+      for (const docId of candidateIds) {
+        const document = this.documents.get(docId);
+        if (!document) continue;
 
-          if (response.data?.Get?.[className]) {
-            for (const item of response.data.Get[className]) {
-              let content = item.content;
+        // Apply filters
+        if (contentTypes && !contentTypes.includes(document.metadata.contentType)) continue;
+        if (userId && document.metadata.userId !== userId) continue;
 
-              // Decrypt if necessary
-              if (item.encrypted) {
-                try {
-                  const encryptedData = JSON.parse(item.content);
-                  content = await postQuantumEncryption.decrypt(encryptedData);
-                } catch (error) {
-                  console.error('Decryption failed:', error);
-                  continue; // Skip corrupted items
-                }
-              }
-
-              results.push({
-                id: item._additional.id,
-                content,
-                metadata: item.metadata,
-                score: item._additional.score || 0,
-                vector: item._additional.vector
-              });
-            }
+        // Calculate relevance score
+        const score = this.calculateRelevanceScore(document.content, searchTerms);
+        
+        // Decrypt content if necessary
+        let content = document.content;
+        if (document.encrypted) {
+          try {
+            const encryptedData = JSON.parse(document.content);
+            content = await postQuantumEncryption.decrypt(encryptedData);
+          } catch (error) {
+            console.error('Decryption failed:', error);
+            continue;
           }
-        } catch (error) {
-          console.error(`Search error for class ${className}:`, error);
         }
+
+        results.push({
+          id: document.id,
+          content,
+          metadata: document.metadata,
+          score,
+          vector: document.vector
+        });
       }
 
-      // Sort by relevance score
-      return results.sort((a, b) => b.score - a.score).slice(0, limit);
+      // Sort by relevance score and limit results
+      return results
+        .sort((a, b) => b.score - a.score)
+        .slice(0, limit);
 
     } catch (error) {
-      console.error('Semantic search error:', error);
+      console.error('Semantic search error:', error instanceof Error ? error.message : 'Unknown error');
       throw error;
     }
+  }
+
+  /**
+   * Calculate relevance score for search results
+   */
+  private calculateRelevanceScore(content: string, searchTerms: string[]): number {
+    const contentLower = content.toLowerCase();
+    let score = 0;
+
+    searchTerms.forEach(term => {
+      const termCount = (contentLower.match(new RegExp(term, 'g')) || []).length;
+      score += termCount * (1 / content.length) * 1000; // Normalize by content length
+    });
+
+    return score;
   }
 
   /**
@@ -386,10 +247,15 @@ export class WeaviateVectorDatabase {
   /**
    * Export data from specific shard
    */
-  private async exportShardData(shardId: string): Promise<any[]> {
-    // This is a simplified implementation
-    // In practice, you'd query by shard-specific metadata
-    return [];
+  private async exportShardData(shardId: string): Promise<VectorDocument[]> {
+    const shardDocs: VectorDocument[] = [];
+    
+    for (const [id, document] of this.documents) {
+      // For simplicity, include all documents (in production, would filter by shard metadata)
+      shardDocs.push(document);
+    }
+    
+    return shardDocs;
   }
 
   /**
