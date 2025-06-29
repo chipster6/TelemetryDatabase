@@ -80,17 +80,29 @@ export class PostQuantumEncryption {
       const serialized = JSON.stringify(data);
       const compressed = await gzip(Buffer.from(serialized, 'utf8'));
       
-      // Use AES-256-CTR for symmetric encryption (quantum-resistant for now)
-      const algorithm = 'aes-256-ctr';
+      // Use quantum-resistant encryption with HMAC-based stream cipher
       const key = crypto.scryptSync(keyPair.privateKey, 'salt', 32);
       const iv = crypto.randomBytes(16);
-      const cipher = crypto.createCipher(algorithm, key);
       
-      let encrypted = cipher.update(compressed);
-      encrypted = Buffer.concat([encrypted, cipher.final()]);
+      // Stream cipher implementation using HMAC-based key derivation
+      const encrypted = Buffer.alloc(compressed.length);
+      let keyOffset = 0;
+      
+      for (let i = 0; i < compressed.length; i += 32) {
+        const blockKey = crypto.createHmac('sha256', key)
+          .update(iv)
+          .update(Buffer.from([keyOffset]))
+          .digest();
+        
+        const blockSize = Math.min(32, compressed.length - i);
+        for (let j = 0; j < blockSize; j++) {
+          encrypted[i + j] = compressed[i + j] ^ blockKey[j];
+        }
+        keyOffset++;
+      }
       
       // Create authentication tag for integrity
-      const authTag = crypto.createHmac('sha256', key).update(encrypted).digest().slice(0, 16);
+      const authTag = crypto.createHmac('sha256', key).update(Buffer.concat([iv, encrypted])).digest().slice(0, 16);
       
       // Combine IV, auth tag, and encrypted data
       const encryptedPayload = Buffer.concat([iv, authTag, encrypted]);
@@ -129,17 +141,29 @@ export class PostQuantumEncryption {
     const authTag = payload.slice(16, 32);
     const encrypted = payload.slice(32);
     
-    const algorithm = 'aes-256-ctr';
     const key = crypto.scryptSync(keyPair.privateKey, 'salt', 32);
-    const decipher = crypto.createDecipheriv(algorithm, key, iv);
-    
-    let decrypted = decipher.update(encrypted);
-    decrypted = Buffer.concat([decrypted, decipher.final()]);
     
     // Verify auth tag for integrity
-    const expectedAuthTag = crypto.createHmac('sha256', key).update(encrypted).digest().slice(0, 16);
+    const expectedAuthTag = crypto.createHmac('sha256', key).update(Buffer.concat([iv, encrypted])).digest().slice(0, 16);
     if (!authTag.equals(expectedAuthTag)) {
       throw new Error('Authentication tag verification failed');
+    }
+    
+    // Stream cipher decryption
+    const decrypted = Buffer.alloc(encrypted.length);
+    let keyOffset = 0;
+    
+    for (let i = 0; i < encrypted.length; i += 32) {
+      const blockKey = crypto.createHmac('sha256', key)
+        .update(iv)
+        .update(Buffer.from([keyOffset]))
+        .digest();
+      
+      const blockSize = Math.min(32, encrypted.length - i);
+      for (let j = 0; j < blockSize; j++) {
+        decrypted[i + j] = encrypted[i + j] ^ blockKey[j];
+      }
+      keyOffset++;
     }
     
     // Decompress and parse
