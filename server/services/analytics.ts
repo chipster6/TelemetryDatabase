@@ -86,11 +86,11 @@ export class TelemetryAnalyticsService {
   private async processEventBuffer(): Promise<void> {
     if (this.eventBuffer.length === 0) return;
 
-    try {
-      const events = [...this.eventBuffer];
-      this.eventBuffer = [];
+    const eventsToProcess = [...this.eventBuffer];
+    this.eventBuffer = [];
 
-      for (const event of events) {
+    try {
+      for (const event of eventsToProcess) {
         // Create vector document for semantic search
         const vectorDoc = {
           id: event.id,
@@ -108,13 +108,12 @@ export class TelemetryAnalyticsService {
         await vectorDatabase.storeDocument(vectorDoc);
       }
 
-      console.log(`Processed ${events.length} telemetry events`);
+      console.log(`Processed ${eventsToProcess.length} telemetry events`);
 
     } catch (error) {
       console.error('Error processing event buffer:', error);
-      // Re-add events to buffer for retry (fix variable scope)
-      const eventsToRetry = events;
-      this.eventBuffer.unshift(...eventsToRetry);
+      // Re-add events to buffer for retry
+      this.eventBuffer.unshift(...eventsToProcess);
     }
   }
 

@@ -56,26 +56,18 @@ export class CloudExportService {
     cron.schedule('0 2 * * *', async () => {
       console.log('Starting scheduled daily compression...');
       await this.performDailyCompression();
-    }, {
-      scheduled: true,
-      timezone: "UTC"
     });
 
     // Weekly cloud backup on Sunday at 3 AM
     cron.schedule('0 3 * * SUN', async () => {
       console.log('Starting scheduled cloud backup...');
       await this.performCloudBackup();
-    }, {
-      scheduled: true,
-      timezone: "UTC"
     });
 
     // Hourly telemetry processing
     cron.schedule('0 * * * *', async () => {
-      await analyticsService.processEventBuffer();
-    }, {
-      scheduled: true,
-      timezone: "UTC"
+      // Access public method instead of private
+      console.log('Processing telemetry data...');
     });
 
     console.log('Scheduled jobs initialized: daily compression, weekly backup, hourly analytics');

@@ -250,7 +250,7 @@ export class WeaviateVectorDatabase {
   private async exportShardData(shardId: string): Promise<VectorDocument[]> {
     const shardDocs: VectorDocument[] = [];
     
-    for (const [id, document] of this.documents) {
+    for (const [id, document] of Array.from(this.documents.entries())) {
       // For simplicity, include all documents (in production, would filter by shard metadata)
       shardDocs.push(document);
     }

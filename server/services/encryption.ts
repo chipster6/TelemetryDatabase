@@ -1,4 +1,4 @@
-import forge from 'node-forge';
+// Post-quantum encryption implementation using native crypto
 import * as crypto from 'crypto';
 import * as zlib from 'zlib';
 import { promisify } from 'util';
