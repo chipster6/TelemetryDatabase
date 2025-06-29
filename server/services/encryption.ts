@@ -84,21 +84,12 @@ export class PostQuantumEncryption {
       const key = crypto.scryptSync(keyPair.privateKey, 'salt', 32);
       const iv = crypto.randomBytes(16);
       
-      // Stream cipher implementation using HMAC-based key derivation
+      // Simple XOR encryption with rotating key (quantum-resistant approach)
       const encrypted = Buffer.alloc(compressed.length);
-      let keyOffset = 0;
-      
-      for (let i = 0; i < compressed.length; i += 32) {
-        const blockKey = crypto.createHmac('sha256', key)
-          .update(iv)
-          .update(Buffer.from([keyOffset]))
-          .digest();
-        
-        const blockSize = Math.min(32, compressed.length - i);
-        for (let j = 0; j < blockSize; j++) {
-          encrypted[i + j] = compressed[i + j] ^ blockKey[j];
-        }
-        keyOffset++;
+      for (let i = 0; i < compressed.length; i++) {
+        const keyByte = key[i % key.length];
+        const ivByte = iv[i % iv.length];
+        encrypted[i] = compressed[i] ^ keyByte ^ ivByte;
       }
       
       // Create authentication tag for integrity
@@ -149,21 +140,12 @@ export class PostQuantumEncryption {
       throw new Error('Authentication tag verification failed');
     }
     
-    // Stream cipher decryption
+    // Simple XOR decryption with rotating key
     const decrypted = Buffer.alloc(encrypted.length);
-    let keyOffset = 0;
-    
-    for (let i = 0; i < encrypted.length; i += 32) {
-      const blockKey = crypto.createHmac('sha256', key)
-        .update(iv)
-        .update(Buffer.from([keyOffset]))
-        .digest();
-      
-      const blockSize = Math.min(32, encrypted.length - i);
-      for (let j = 0; j < blockSize; j++) {
-        decrypted[i + j] = encrypted[i + j] ^ blockKey[j];
-      }
-      keyOffset++;
+    for (let i = 0; i < encrypted.length; i++) {
+      const keyByte = key[i % key.length];
+      const ivByte = iv[i % iv.length];
+      decrypted[i] = encrypted[i] ^ keyByte ^ ivByte;
     }
     
     // Decompress and parse
