@@ -109,6 +109,7 @@ This is a full-stack web application that combines AI prompt engineering with re
 ```
 Changelog:
 - June 29, 2025. Initial setup
+- June 29, 2025. Fixed startup issues: resolved missing chart.js dependency and CSS import order problems. App now running successfully with real-time biometric simulation.
 ```
 
 ## User Preferences
