@@ -79,15 +79,17 @@ export class PostQuantumEncryption {
     const serialized = JSON.stringify(data);
     const compressed = await gzip(Buffer.from(serialized, 'utf8'));
     
-    // Use AES-256-GCM for symmetric encryption (quantum-resistant for now)
-    const algorithm = 'aes-256-gcm';
+    // Use AES-256-CTR for symmetric encryption (quantum-resistant for now)
+    const algorithm = 'aes-256-ctr';
     const key = crypto.scryptSync(keyPair.privateKey, 'salt', 32);
     const iv = crypto.randomBytes(16);
     const cipher = crypto.createCipher(algorithm, key);
     
     let encrypted = cipher.update(compressed);
     encrypted = Buffer.concat([encrypted, cipher.final()]);
-    const authTag = cipher.getAuthTag();
+    
+    // Create authentication tag for integrity
+    const authTag = crypto.createHmac('sha256', key).update(encrypted).digest().slice(0, 16);
     
     // Combine IV, auth tag, and encrypted data
     const encryptedPayload = Buffer.concat([iv, authTag, encrypted]);
@@ -125,10 +127,15 @@ export class PostQuantumEncryption {
     const algorithm = 'aes-256-gcm';
     const key = crypto.scryptSync(keyPair.privateKey, 'salt', 32);
     const decipher = crypto.createDecipher(algorithm, key);
-    decipher.setAuthTag(authTag);
     
     let decrypted = decipher.update(encrypted);
     decrypted = Buffer.concat([decrypted, decipher.final()]);
+    
+    // Verify auth tag for integrity
+    const expectedAuthTag = crypto.createHash('sha256').update(encrypted).digest().slice(0, 16);
+    if (!authTag.equals(expectedAuthTag)) {
+      throw new Error('Authentication tag verification failed');
+    }
     
     // Decompress and parse
     const decompressed = await gunzip(decrypted);
