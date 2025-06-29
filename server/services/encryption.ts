@@ -70,39 +70,44 @@ export class PostQuantumEncryption {
    * Encrypt data using post-quantum resistant algorithm
    */
   async encrypt(data: any): Promise<EncryptedData> {
-    const keyPair = this.keyStore.get(this.currentKeyId);
-    if (!keyPair) {
-      throw new Error('No key pair available');
-    }
+    try {
+      const keyPair = this.keyStore.get(this.currentKeyId);
+      if (!keyPair) {
+        throw new Error('No key pair available');
+      }
 
-    // Serialize and compress data
-    const serialized = JSON.stringify(data);
-    const compressed = await gzip(Buffer.from(serialized, 'utf8'));
-    
-    // Use AES-256-CTR for symmetric encryption (quantum-resistant for now)
-    const algorithm = 'aes-256-ctr';
-    const key = crypto.scryptSync(keyPair.privateKey, 'salt', 32);
-    const iv = crypto.randomBytes(16);
-    const cipher = crypto.createCipher(algorithm, key);
-    
-    let encrypted = cipher.update(compressed);
-    encrypted = Buffer.concat([encrypted, cipher.final()]);
-    
-    // Create authentication tag for integrity
-    const authTag = crypto.createHmac('sha256', key).update(encrypted).digest().slice(0, 16);
-    
-    // Combine IV, auth tag, and encrypted data
-    const encryptedPayload = Buffer.concat([iv, authTag, encrypted]);
-    
-    // Create signature using private key
-    const signature = this.sign(encryptedPayload.toString('base64'), keyPair.privateKey);
-    
-    return {
-      data: encryptedPayload.toString('base64'),
-      keyId: this.currentKeyId,
-      timestamp: Date.now(),
-      signature
-    };
+      // Serialize and compress data
+      const serialized = JSON.stringify(data);
+      const compressed = await gzip(Buffer.from(serialized, 'utf8'));
+      
+      // Use AES-256-CTR for symmetric encryption (quantum-resistant for now)
+      const algorithm = 'aes-256-ctr';
+      const key = crypto.scryptSync(keyPair.privateKey, 'salt', 32);
+      const iv = crypto.randomBytes(16);
+      const cipher = crypto.createCipher(algorithm, key);
+      
+      let encrypted = cipher.update(compressed);
+      encrypted = Buffer.concat([encrypted, cipher.final()]);
+      
+      // Create authentication tag for integrity
+      const authTag = crypto.createHmac('sha256', key).update(encrypted).digest().slice(0, 16);
+      
+      // Combine IV, auth tag, and encrypted data
+      const encryptedPayload = Buffer.concat([iv, authTag, encrypted]);
+      
+      // Create signature using private key
+      const signature = this.sign(encryptedPayload.toString('base64'), keyPair.privateKey);
+      
+      return {
+        data: encryptedPayload.toString('base64'),
+        keyId: this.currentKeyId,
+        timestamp: Date.now(),
+        signature
+      };
+    } catch (error) {
+      console.error('Encryption failed:', error);
+      throw new Error('Encryption failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    }
   }
 
   /**
@@ -124,15 +129,15 @@ export class PostQuantumEncryption {
     const authTag = payload.slice(16, 32);
     const encrypted = payload.slice(32);
     
-    const algorithm = 'aes-256-gcm';
+    const algorithm = 'aes-256-ctr';
     const key = crypto.scryptSync(keyPair.privateKey, 'salt', 32);
-    const decipher = crypto.createDecipher(algorithm, key);
+    const decipher = crypto.createDecipheriv(algorithm, key, iv);
     
     let decrypted = decipher.update(encrypted);
     decrypted = Buffer.concat([decrypted, decipher.final()]);
     
     // Verify auth tag for integrity
-    const expectedAuthTag = crypto.createHash('sha256').update(encrypted).digest().slice(0, 16);
+    const expectedAuthTag = crypto.createHmac('sha256', key).update(encrypted).digest().slice(0, 16);
     if (!authTag.equals(expectedAuthTag)) {
       throw new Error('Authentication tag verification failed');
     }
