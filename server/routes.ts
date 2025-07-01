@@ -221,8 +221,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get prompt templates
-  app.get("/api/templates", async (req, res) => {
+  // Get prompt templates (protected)
+  app.get("/api/templates", requireAuth, async (req, res) => {
     try {
       const templates = await storage.getPromptTemplates();
       res.json(templates);
