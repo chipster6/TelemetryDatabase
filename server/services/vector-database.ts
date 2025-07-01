@@ -27,9 +27,13 @@ export interface ShardInfo {
 }
 
 export class WeaviateVectorDatabase {
-  private client: WeaviateClient;
+  private client?: WeaviateClient;
   private className = 'PromptDocument';
   private isInitialized = false;
+  private documents = new Map<string, VectorDocument>();
+  private searchIndex = new Map<string, VectorDocument[]>();
+  private shards = new Map<string, ShardInfo>();
+  private currentShard = 'shard_' + Date.now();
 
   constructor() {
     this.initializeClient();
@@ -71,12 +75,7 @@ export class WeaviateVectorDatabase {
       const classObj = {
         class: this.className,
         description: 'Prompt engineering documents with biometric context',
-        vectorizer: 'text2vec-transformers',
-        moduleConfig: {
-          'text2vec-transformers': {
-            poolingStrategy: 'masked_mean'
-          }
-        },
+        vectorizer: 'none',
         properties: [
           {
             name: 'content',
@@ -337,7 +336,7 @@ export class WeaviateVectorDatabase {
   private async exportShardData(shardId: string): Promise<VectorDocument[]> {
     const shardDocs: VectorDocument[] = [];
     
-    for (const [id, document] of Array.from(this.documents.entries())) {
+    for (const document of this.documents.values()) {
       // For simplicity, include all documents (in production, would filter by shard metadata)
       shardDocs.push(document);
     }
