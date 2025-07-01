@@ -126,9 +126,21 @@ async function decryptRequest(encryptedData: any): Promise<any> {
 export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
 
-  // Rate limiting for API endpoints
-  const { RateLimiter, PerformanceMonitor } = await import("./utils/performance");
-  const apiLimiter = new RateLimiter(100, 60000); // 100 requests per minute
+  // Simple rate limiting for API endpoints
+  const requests = new Map<string, number[]>();
+  const rateLimit = (ip: string, maxRequests: number = 100, windowMs: number = 60000): boolean => {
+    const now = Date.now();
+    if (!requests.has(ip)) requests.set(ip, []);
+    
+    const userRequests = requests.get(ip)!;
+    const validRequests = userRequests.filter(time => now - time < windowMs);
+    
+    if (validRequests.length >= maxRequests) return false;
+    
+    validRequests.push(now);
+    requests.set(ip, validRequests);
+    return true;
+  };
 
   // WebSocket server for real-time biometric data
   const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
@@ -263,11 +275,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/generate", async (req, res) => {
     try {
       // Rate limiting
-      if (!(await apiLimiter.checkLimit())) {
+      if (!rateLimit(req.ip || 'unknown')) {
         return res.status(429).json({ error: "Too many requests" });
       }
       
-      PerformanceMonitor.startTimer('prompt_generation');
+      const startTime = Date.now();
       const schema = insertPromptSessionSchema.extend({
         biometricContext: z.object({
           heartRate: z.number().optional(),
@@ -321,7 +333,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }, session.id);
       }
 
-      const responseTime = PerformanceMonitor.endTimer('prompt_generation');
+      const responseTime = Date.now() - startTime;
       
       res.json({
         session: updatedSession,

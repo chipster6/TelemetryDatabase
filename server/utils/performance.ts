@@ -53,7 +53,7 @@ export class PerformanceMonitor {
 
   static getAllMetrics(): Record<string, any> {
     const result: Record<string, any> = {};
-    for (const [label] of this.metrics) {
+    for (const [label] of Array.from(this.metrics.keys())) {
       result[label] = this.getMetrics(label);
     }
     return result;
