@@ -6,7 +6,8 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { useSecureInput } from "@/hooks/useSecureInput";
-import { Lock, User, Eye, EyeOff, Shield } from "lucide-react";
+import { SecurePasswordInput } from "@/components/secure-password-input";
+import { Lock, User, Shield } from "lucide-react";
 
 interface LoginProps {
   onLoginSuccess: () => void;
@@ -15,60 +16,14 @@ interface LoginProps {
 export default function Login({ onLoginSuccess }: LoginProps) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
   const { toast } = useToast();
   const { login, isLoginPending } = useAuth();
   const { getSecureInputProps } = useSecureInput();
   const formRef = useRef<HTMLFormElement>(null);
-  const passwordInputRef = useRef<HTMLInputElement>(null);
 
-  // Security measures to prevent keylogging and input monitoring
-  useEffect(() => {
-    // Disable drag and drop on form elements
-    const preventDragDrop = (e: DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-    };
-
-    // Disable right-click context menu on sensitive elements
-    const preventContextMenu = (e: MouseEvent) => {
-      e.preventDefault();
-    };
-
-    // Disable text selection on password field
-    const preventSelection = (e: Event) => {
-      e.preventDefault();
-    };
-
-    if (formRef.current) {
-      const form = formRef.current;
-      form.addEventListener('dragover', preventDragDrop);
-      form.addEventListener('drop', preventDragDrop);
-      form.addEventListener('contextmenu', preventContextMenu);
-      
-      // Apply to password input specifically
-      if (passwordInputRef.current) {
-        passwordInputRef.current.addEventListener('selectstart', preventSelection);
-        passwordInputRef.current.style.webkitUserSelect = 'none';
-        passwordInputRef.current.style.userSelect = 'none';
-      }
-
-      return () => {
-        form.removeEventListener('dragover', preventDragDrop);
-        form.removeEventListener('drop', preventDragDrop);
-        form.removeEventListener('contextmenu', preventContextMenu);
-        
-        if (passwordInputRef.current) {
-          passwordInputRef.current.removeEventListener('selectstart', preventSelection);
-        }
-      };
-    }
-  }, []);
-
-  // Clear clipboard when component unmounts
+  // Clear password from memory when component unmounts
   useEffect(() => {
     return () => {
-      // Clear password from memory
       setPassword("");
     };
   }, []);
@@ -110,13 +65,9 @@ export default function Login({ onLoginSuccess }: LoginProps) {
     }
   };
 
-  // Secure password input handler
-  const handlePasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
+  // Secure password change handler
+  const handlePasswordChange = (value: string) => {
     setPassword(value);
-    
-    // Prevent browser password suggestion/autofill logging
-    e.target.setAttribute('autocomplete', 'new-password');
   };
 
   return (
@@ -158,34 +109,19 @@ export default function Login({ onLoginSuccess }: LoginProps) {
             <div className="space-y-2">
               <Label htmlFor="password">Password</Label>
               <div className="relative">
-                <Lock className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                <Input
-                  ref={passwordInputRef}
+                <Lock className="absolute left-3 top-3 h-4 w-4 text-gray-400 z-10" />
+                <SecurePasswordInput
                   id="password"
-                  type={showPassword ? "text" : "password"}
                   value={password}
                   onChange={handlePasswordChange}
                   className="pl-10 pr-10"
                   placeholder="Enter your password"
-                  {...getSecureInputProps('password')}
-                  style={{
-                    ...getSecureInputProps('password').style,
-                    ...(showPassword ? {} : { WebkitTextSecurity: 'disc' } as any),
-                  }}
                   required
                 />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-3 h-4 w-4 text-gray-400 hover:text-gray-600"
-                  tabIndex={-1}
-                >
-                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
               </div>
               <p className="text-xs text-gray-500 flex items-center gap-1">
                 <Shield className="h-3 w-3" />
-                Password is encrypted and protected against keyloggers. Click the eye icon to toggle visibility.
+                Zero-visibility password input - no characters shown while typing. Click eye to reveal.
               </p>
             </div>
             <Button
