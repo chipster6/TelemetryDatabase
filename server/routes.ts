@@ -224,12 +224,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Logout route
+  // Logout route with enhanced security
   app.post("/api/logout", (req, res) => {
+    const userId = req.session?.userId;
+    const username = req.session?.username;
+    
     req.session.destroy((err: any) => {
       if (err) {
+        console.error('Logout error:', err);
         return res.status(500).json({ error: "Logout failed" });
       }
+      
+      // Clear session cookie
+      res.clearCookie('connect.sid');
+      
+      // Log successful logout
+      if (userId && username) {
+        console.log(`User ${username} (ID: ${userId}) logged out from IP: ${req.ip}`);
+      }
+      
       res.json({ message: "Logout successful" });
     });
   });

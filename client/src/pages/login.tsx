@@ -170,7 +170,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
                   {...getSecureInputProps('password')}
                   style={{
                     ...getSecureInputProps('password').style,
-                    WebkitTextSecurity: showPassword ? 'none' : 'disc',
+                    ...(showPassword ? {} : { WebkitTextSecurity: 'disc' } as any),
                   }}
                   required
                 />
