@@ -42,6 +42,8 @@ export class TelemetryAnalyticsService {
   private eventBuffer: TelemetryEvent[] = [];
   private bufferSize = 1000;
   private processingInterval: NodeJS.Timeout;
+  private performanceCache = new Map<string, any>();
+  private cacheTimeout = 30000; // 30 seconds
 
   constructor() {
     // Process events every 30 seconds
@@ -81,7 +83,7 @@ export class TelemetryAnalyticsService {
   }
 
   /**
-   * Process buffered events and store in vector database
+   * Process buffered events with batching for performance
    */
   private async processEventBuffer(): Promise<void> {
     if (this.eventBuffer.length === 0) return;

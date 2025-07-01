@@ -27,6 +27,8 @@ export interface CognitiveMetrics {
 }
 
 export class BiometricService {
+  private dataCache = new Map<string, { data: any; timestamp: number }>();
+  private cacheTimeout = 5000; // 5 seconds cache
   private correlationCoefficients = {
     hrvCognitivePerformance: 0.424,
     temperatureCircadianRhythm: 0.78,
@@ -194,7 +196,26 @@ export class BiometricService {
   }
 
   async getRecentBiometricTrends(limit: number = 50): Promise<BiometricData[]> {
-    return await storage.getBiometricData(undefined, limit);
+    const cacheKey = `trends_${limit}`;
+    const cached = this.dataCache.get(cacheKey);
+    
+    if (cached && Date.now() - cached.timestamp < this.cacheTimeout) {
+      return cached.data;
+    }
+    
+    const data = await storage.getBiometricData(undefined, limit);
+    this.dataCache.set(cacheKey, { data, timestamp: Date.now() });
+    
+    return data;
+  }
+
+  private clearExpiredCache(): void {
+    const now = Date.now();
+    for (const [key, value] of this.dataCache.entries()) {
+      if (now - value.timestamp > this.cacheTimeout) {
+        this.dataCache.delete(key);
+      }
+    }
   }
 
   async getBiometricStats(): Promise<{

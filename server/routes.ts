@@ -1,7 +1,15 @@
-import type { Express } from "express";
+import type { Express, Request } from "express";
 import { createServer, type Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { storage } from "./storage";
+
+// Extend session data interface
+declare module 'express-session' {
+  interface SessionData {
+    userId?: number;
+    username?: string;
+  }
+}
 
 import { biometricService } from "./services/biometric";
 import { vectorDatabase } from "./services/vector-database";
@@ -165,7 +173,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // API Routes
 
   // Authentication middleware
-  function requireAuth(req: any, res: any, next: any) {
+  function requireAuth(req: Request, res: any, next: any) {
     if (req.session && req.session.userId) {
       return next();
     }
