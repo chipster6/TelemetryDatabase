@@ -1,3 +1,4 @@
+import weaviate, { WeaviateClient, ApiKey } from 'weaviate-ts-client';
 import { postQuantumEncryption, EncryptedData } from './encryption.js';
 import { VectorDocument } from '../../shared/schema.js';
 import * as zlib from 'zlib';
@@ -26,14 +27,99 @@ export interface ShardInfo {
 }
 
 export class WeaviateVectorDatabase {
-  private documents: Map<string, VectorDocument> = new Map();
-  private shards: Map<string, ShardInfo> = new Map();
-  private compressionThreshold = 10000; // Documents per shard before compression
-  private currentShard = 'shard_' + Date.now();
-  private searchIndex: Map<string, Set<string>> = new Map(); // Simple inverted index
+  private client: WeaviateClient;
+  private className = 'PromptDocument';
+  private isInitialized = false;
 
   constructor() {
-    this.initializeShard(this.currentShard);
+    this.initializeClient();
+  }
+
+  private async initializeClient() {
+    const weaviateUrl = process.env.WEAVIATE_URL;
+    const weaviateApiKey = process.env.WEAVIATE_API_KEY;
+
+    if (!weaviateUrl || !weaviateApiKey) {
+      console.warn('Weaviate credentials not found. Using fallback mode.');
+      return;
+    }
+
+    try {
+      this.client = weaviate.client({
+        scheme: 'https',
+        host: weaviateUrl,
+        apiKey: new ApiKey(weaviateApiKey),
+        headers: { 'X-OpenAI-Api-Key': process.env.OPENAI_API_KEY || '' }
+      });
+
+      await this.initializeSchema();
+      this.isInitialized = true;
+      console.log('Weaviate client initialized successfully');
+    } catch (error) {
+      console.error('Failed to initialize Weaviate client:', error);
+    }
+  }
+
+  private async initializeSchema() {
+    const schemaExists = await this.client.schema
+      .classGetter()
+      .withClassName(this.className)
+      .do()
+      .catch(() => null);
+
+    if (!schemaExists) {
+      const classObj = {
+        class: this.className,
+        description: 'Prompt engineering documents with biometric context',
+        vectorizer: 'text2vec-openai',
+        moduleConfig: {
+          'text2vec-openai': {
+            model: 'ada',
+            type: 'text'
+          }
+        },
+        properties: [
+          {
+            name: 'content',
+            dataType: ['text'],
+            description: 'The content of the document'
+          },
+          {
+            name: 'contentType',
+            dataType: ['text'],
+            description: 'Type of content (prompt, response, biometric, etc.)'
+          },
+          {
+            name: 'userId',
+            dataType: ['int'],
+            description: 'User ID associated with the document'
+          },
+          {
+            name: 'sessionId',
+            dataType: ['int'],
+            description: 'Session ID associated with the document'
+          },
+          {
+            name: 'timestamp',
+            dataType: ['number'],
+            description: 'Timestamp when document was created'
+          },
+          {
+            name: 'cognitiveComplexity',
+            dataType: ['number'],
+            description: 'Cognitive complexity score of the content'
+          },
+          {
+            name: 'biometricContext',
+            dataType: ['text'],
+            description: 'JSON string of biometric context data'
+          }
+        ]
+      };
+
+      await this.client.schema.classCreator().withClass(classObj).do();
+      console.log(`Created Weaviate class: ${this.className}`);
+    }
   }
 
   /**
@@ -66,6 +152,11 @@ export class WeaviateVectorDatabase {
    */
   async storeDocument(document: VectorDocument): Promise<string> {
     try {
+      if (!this.isInitialized) {
+        console.warn('Weaviate not initialized, skipping document storage');
+        return document.id || uuidv4();
+      }
+
       // Encrypt sensitive content
       let processedContent = document.content;
       let isEncrypted = false;
@@ -77,36 +168,33 @@ export class WeaviateVectorDatabase {
         isEncrypted = true;
       }
 
-      // Create enhanced document with encryption and metadata
-      const enhancedDocument: VectorDocument = {
-        ...document,
-        id: document.id || uuidv4(),
+      const documentId = document.id || uuidv4();
+
+      // Prepare data for Weaviate
+      const weaviateData = {
         content: processedContent,
-        encrypted: isEncrypted
+        contentType: document.metadata.contentType,
+        userId: document.metadata.userId || null,
+        sessionId: document.metadata.sessionId || null,
+        timestamp: document.metadata.timestamp || Date.now(),
+        cognitiveComplexity: document.metadata.cognitiveComplexity || 0,
+        biometricContext: document.metadata.biometricContext ? 
+          JSON.stringify(document.metadata.biometricContext) : null
       };
 
-      // Store in memory with sharding
-      this.documents.set(enhancedDocument.id, enhancedDocument);
-      
-      // Build search index
-      this.buildSearchIndex(enhancedDocument);
+      // Store in Weaviate
+      await this.client.data
+        .creator()
+        .withClassName(this.className)
+        .withId(documentId)
+        .withProperties(weaviateData)
+        .do();
 
-      // Update shard info
-      const shard = this.shards.get(this.currentShard);
-      if (shard) {
-        shard.totalDocuments++;
-        shard.lastUpdated = Date.now();
-
-        // Check if shard needs rotation
-        if (shard.totalDocuments >= this.compressionThreshold) {
-          await this.rotateShard();
-        }
-      }
-
-      return enhancedDocument.id;
+      console.log(`Stored document ${documentId} in Weaviate`);
+      return documentId;
 
     } catch (error) {
-      console.error('Error storing document:', error instanceof Error ? error.message : 'Unknown error');
+      console.error('Error storing document in Weaviate:', error instanceof Error ? error.message : 'Unknown error');
       throw error;
     }
   }

@@ -67,6 +67,17 @@ export const deviceConnections = pgTable("device_connections", {
   userId: integer("user_id").references(() => users.id),
 });
 
+export const vectorDocuments = pgTable("vector_documents", {
+  id: text("id").primaryKey(),
+  content: text("content").notNull(),
+  metadata: jsonb("metadata").notNull(),
+  vector: real("vector").array(), // Store embeddings as array of floats
+  encrypted: boolean("encrypted").default(false),
+  userId: integer("user_id").references(() => users.id),
+  sessionId: integer("session_id").references(() => promptSessions.id),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
   password: true,
