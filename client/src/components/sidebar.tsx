@@ -55,55 +55,45 @@ export default function Sidebar() {
 
       {/* Navigation Menu */}
       <nav className="flex-1 p-4 space-y-2">
-        <Link href="/">
-          <a className={`flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
-            location === '/' 
-              ? 'text-primary-600 bg-primary-50 border border-primary-200' 
-              : 'text-gray-600 hover:bg-gray-100'
-          }`}>
-            <i className="fas fa-edit w-5 h-5 mr-3"></i>
-            Prompt Engineering
-          </a>
+        <Link href="/" className={`flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
+          location === '/' 
+            ? 'text-primary-600 bg-primary-50 border border-primary-200' 
+            : 'text-gray-600 hover:bg-gray-100'
+        }`}>
+          <i className="fas fa-edit w-5 h-5 mr-3"></i>
+          Prompt Engineering
         </Link>
-        <Link href="/biometric-monitor">
-          <a className={`flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
-            location === '/biometric-monitor' 
-              ? 'text-primary-600 bg-primary-50 border border-primary-200' 
-              : 'text-gray-600 hover:bg-gray-100'
-          }`}>
-            <i className="fas fa-heartbeat w-5 h-5 mr-3"></i>
-            Biometric Monitor
-          </a>
+        <Link href="/biometric-monitor" className={`flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
+          location === '/biometric-monitor' 
+            ? 'text-primary-600 bg-primary-50 border border-primary-200' 
+            : 'text-gray-600 hover:bg-gray-100'
+        }`}>
+          <i className="fas fa-heartbeat w-5 h-5 mr-3"></i>
+          Biometric Monitor
         </Link>
-        <Link href="/analytics">
-          <a className={`flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
-            location === '/analytics' 
-              ? 'text-primary-600 bg-primary-50 border border-primary-200' 
-              : 'text-gray-600 hover:bg-gray-100'
-          }`}>
-            <i className="fas fa-chart-line w-5 h-5 mr-3"></i>
-            Analytics
-          </a>
+        <Link href="/analytics" className={`flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
+          location === '/analytics' 
+            ? 'text-primary-600 bg-primary-50 border border-primary-200' 
+            : 'text-gray-600 hover:bg-gray-100'
+        }`}>
+          <i className="fas fa-chart-line w-5 h-5 mr-3"></i>
+          Analytics
         </Link>
-        <Link href="/training-data">
-          <a className={`flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
-            location === '/training-data' 
-              ? 'text-primary-600 bg-primary-50 border border-primary-200' 
-              : 'text-gray-600 hover:bg-gray-100'
-          }`}>
-            <i className="fas fa-database w-5 h-5 mr-3"></i>
-            Training Data
-          </a>
+        <Link href="/training-data" className={`flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
+          location === '/training-data' 
+            ? 'text-primary-600 bg-primary-50 border border-primary-200' 
+            : 'text-gray-600 hover:bg-gray-100'
+        }`}>
+          <i className="fas fa-database w-5 h-5 mr-3"></i>
+          Training Data
         </Link>
-        <Link href="/privacy-settings">
-          <a className={`flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
-            location === '/privacy-settings' 
-              ? 'text-primary-600 bg-primary-50 border border-primary-200' 
-              : 'text-gray-600 hover:bg-gray-100'
-          }`}>
-            <i className="fas fa-shield-alt w-5 h-5 mr-3"></i>
-            Privacy Settings
-          </a>
+        <Link href="/privacy-settings" className={`flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
+          location === '/privacy-settings' 
+            ? 'text-primary-600 bg-primary-50 border border-primary-200' 
+            : 'text-gray-600 hover:bg-gray-100'
+        }`}>
+          <i className="fas fa-shield-alt w-5 h-5 mr-3"></i>
+          Privacy Settings
         </Link>
       </nav>
 

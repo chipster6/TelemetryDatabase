@@ -34,6 +34,7 @@ export default function PromptInterface() {
   const [temperature, setTemperature] = useState(0.7);
   const [maxTokens, setMaxTokens] = useState(1000);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<string>("all");
   
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -42,6 +43,14 @@ export default function PromptInterface() {
   const { data: templates = [] } = useQuery<PromptTemplate[]>({
     queryKey: ['/api/templates'],
   });
+
+  // Get unique categories for filtering
+  const categories = Array.from(new Set(templates.map(t => t.category))).sort();
+  
+  // Filter templates by selected category
+  const filteredTemplates = selectedCategory === "all" 
+    ? templates 
+    : templates.filter(t => t.category === selectedCategory);
 
   const generateMutation = useMutation({
     mutationFn: async (request: GenerateRequest) => {
@@ -135,19 +144,43 @@ export default function PromptInterface() {
       
       {/* Template Selector */}
       <div className="mb-4">
-        <Label htmlFor="template" className="text-sm font-medium text-gray-700 mb-2 block">Template</Label>
-        <Select onValueChange={handleTemplateChange} value={selectedTemplate?.toString() || ""}>
-          <SelectTrigger>
-            <SelectValue placeholder="Select a template..." />
-          </SelectTrigger>
-          <SelectContent>
-            {templates.map((template) => (
-              <SelectItem key={template.id} value={template.id.toString()}>
-                {template.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <Label className="text-sm font-medium text-gray-700 mb-2 block">Template Selection</Label>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+          <div>
+            <Label className="text-xs text-gray-500 mb-1 block">Category</Label>
+            <Select onValueChange={setSelectedCategory} value={selectedCategory}>
+              <SelectTrigger>
+                <SelectValue placeholder="All Categories" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Categories ({templates.length})</SelectItem>
+                {categories.map((category) => (
+                  <SelectItem key={category} value={category}>
+                    {category} ({templates.filter(t => t.category === category).length})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label className="text-xs text-gray-500 mb-1 block">Template</Label>
+            <Select onValueChange={handleTemplateChange} value={selectedTemplate?.toString() || ""}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select template..." />
+              </SelectTrigger>
+              <SelectContent>
+                {filteredTemplates.map((template) => (
+                  <SelectItem key={template.id} value={template.id.toString()}>
+                    <div className="flex items-center justify-between w-full">
+                      <span>{template.name}</span>
+                      <span className="text-xs text-gray-400 ml-2">{template.category}</span>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
       </div>
 
       {/* System Prompt */}
