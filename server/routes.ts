@@ -705,6 +705,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // RAG Service endpoints
+  app.post("/api/rag/generate", requireAuth, async (req, res) => {
+    try {
+      const { ragService } = await import('./services/rag.service.js');
+      const { query, biometrics } = req.body;
+      
+      if (!query || !biometrics) {
+        return res.status(400).json({ error: "Query and biometrics required" });
+      }
+
+      const userQuery = {
+        text: query,
+        intent: req.body.intent,
+        complexity: req.body.complexity || 'medium',
+        domain: req.body.domain
+      };
+
+      const response = await ragService.generateWithContext(userQuery, biometrics, req.session.userId);
+      res.json(response);
+    } catch (error) {
+      console.error('Failed to generate RAG response:', error);
+      res.status(500).json({ error: "Failed to generate response" });
+    }
+  });
+
+  app.get("/api/rag/stats", async (req, res) => {
+    try {
+      const { ragService } = await import('./services/rag.service.js');
+      const stats = ragService.getStats();
+      res.json(stats);
+    } catch (error) {
+      console.error('Failed to get RAG stats:', error);
+      res.status(500).json({ error: "Failed to get RAG stats" });
+    }
+  });
+
+  // Migration endpoints
+  app.post("/api/migration/postgres-to-weaviate", requireAuth, async (req, res) => {
+    try {
+      const { migratePostgresToWeaviate } = await import('../migrations/postgres-to-weaviate.js');
+      const { dryRun = false, batchSize = 100 } = req.body;
+      
+      const stats = await migratePostgresToWeaviate({ dryRun, batchSize });
+      res.json({ success: true, stats });
+    } catch (error) {
+      console.error('Migration failed:', error);
+      res.status(500).json({ error: "Migration failed" });
+    }
+  });
+
   // Vector database statistics
   app.get("/api/vector/stats", async (req, res) => {
     try {

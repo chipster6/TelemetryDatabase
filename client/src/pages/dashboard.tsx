@@ -4,6 +4,7 @@ import PromptInterface from "@/components/prompt-interface";
 import PromptRefinement from "@/components/ai-response";
 import BiometricPanel from "@/components/biometric-panel";
 import BiometricDashboard from "@/components/biometric-dashboard";
+import RAGInterface from "@/components/rag-interface";
 import { WeaviateStatus } from "@/components/weaviate-status";
 import { NexisBrainStatus } from "@/components/nexis-brain-status";
 import { WeaviatePrimaryStatus } from "@/components/weaviate-primary-status";
@@ -76,6 +77,9 @@ export default function Dashboard() {
                 <NexisBrainStatus />
               </div>
             </div>
+
+            {/* RAG-Powered AI Interface */}
+            <RAGInterface />
 
             {/* Prompt Refinement Area */}
             <PromptRefinement />
