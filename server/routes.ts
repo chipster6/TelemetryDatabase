@@ -755,6 +755,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Training Export endpoints
+  app.post("/api/training-export/start", requireAuth, async (req, res) => {
+    try {
+      const { trainingExportService } = await import('./services/training-export.service.js');
+      const config = req.body;
+      
+      const jobId = await trainingExportService.exportTrainingData(config);
+      res.json({ success: true, jobId });
+    } catch (error) {
+      console.error('Failed to start training export:', error);
+      res.status(500).json({ error: "Failed to start training export" });
+    }
+  });
+
+  app.get("/api/training-export/jobs", async (req, res) => {
+    try {
+      const { trainingExportService } = await import('./services/training-export.service.js');
+      const jobs = trainingExportService.getAllJobs();
+      res.json(jobs);
+    } catch (error) {
+      console.error('Failed to get export jobs:', error);
+      res.status(500).json({ error: "Failed to get export jobs" });
+    }
+  });
+
+  app.get("/api/training-export/job/:jobId", async (req, res) => {
+    try {
+      const { trainingExportService } = await import('./services/training-export.service.js');
+      const job = trainingExportService.getJobStatus(req.params.jobId);
+      
+      if (!job) {
+        return res.status(404).json({ error: "Job not found" });
+      }
+      
+      res.json(job);
+    } catch (error) {
+      console.error('Failed to get job status:', error);
+      res.status(500).json({ error: "Failed to get job status" });
+    }
+  });
+
   // Vector database statistics
   app.get("/api/vector/stats", async (req, res) => {
     try {
