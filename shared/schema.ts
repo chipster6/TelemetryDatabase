@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, timestamp, jsonb, real } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, jsonb, real, bigint, json } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -84,6 +84,29 @@ export const vectorDocuments = pgTable("vector_documents", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+export const webauthnCredentials = pgTable("webauthn_credentials", {
+  id: text("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  publicKey: text("public_key").notNull(),
+  counter: bigint("counter", { mode: "bigint" }).notNull(),
+  deviceType: text("device_type").notNull(),
+  backedUp: boolean("backed_up").notNull(),
+  transports: json("transports").$type<string[]>(),
+  credentialName: text("credential_name"),
+  createdAt: timestamp("created_at").defaultNow(),
+  lastUsed: timestamp("last_used")
+});
+
+export const webauthnChallenges = pgTable("webauthn_challenges", {
+  id: serial("id").primaryKey(),
+  challenge: text("challenge").notNull(),
+  userId: integer("user_id").references(() => users.id),
+  type: text("type").notNull(), // "registration" or "authentication"
+  createdAt: timestamp("created_at").defaultNow(),
+  expiresAt: timestamp("expires_at").notNull(),
+  used: boolean("used").default(false)
+});
+
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
   password: true,
@@ -114,6 +137,17 @@ export const insertCognitiveCorrelationSchema = createInsertSchema(cognitiveCorr
 export const insertDeviceConnectionSchema = createInsertSchema(deviceConnections).omit({
   id: true,
   lastSeen: true,
+});
+
+export const insertWebauthnCredentialSchema = createInsertSchema(webauthnCredentials).omit({
+  createdAt: true,
+  lastUsed: true
+});
+
+export const insertWebauthnChallengeSchema = createInsertSchema(webauthnChallenges).omit({
+  id: true,
+  createdAt: true,
+  used: true
 });
 
 export type User = typeof users.$inferSelect;

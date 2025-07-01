@@ -23,16 +23,23 @@ An advanced AI-powered platform that explores the intersection of cognitive perf
 
 ### 🔒 Advanced Security & Privacy
 - **Post-Quantum Encryption**: All data protected with quantum-resistant algorithms
+- **WebAuthn/FIDO2**: Passwordless biometric authentication with security keys
+- **Homomorphic Encryption**: Privacy-preserving cloud computations on encrypted data
 - **Zero-Visibility Password Input**: Custom secure input that never shows characters while typing
 - **Anti-Keylogging Protection**: Comprehensive clipboard monitoring and access prevention
 - **On-Device Processing**: Privacy-first approach with local biometric data processing
-- **Federated Learning**: Privacy-preserving AI model improvements
 
 ### 🗄️ Vector Database Integration
 - **Weaviate Cloud**: Real-time semantic search and vector storage
 - **Intelligent Indexing**: AI-powered content organization and retrieval
 - **Performance Optimization**: Caching, rate limiting, and batch processing
 - **Health Monitoring**: Comprehensive connection status and performance tracking
+
+### 🔧 Biometric Device SDK
+- **Multi-Device Support**: Apple HealthKit, Bluetooth HRM, EEG sensors
+- **Real-Time Streaming**: Continuous biometric data collection with validation
+- **Device Discovery**: Automatic detection and pairing of compatible devices
+- **Event-Driven Architecture**: Reactive device management and data processing
 
 ## 🚀 Quick Start
 
