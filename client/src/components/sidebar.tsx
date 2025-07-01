@@ -87,6 +87,14 @@ export default function Sidebar() {
           <i className="fas fa-database w-5 h-5 mr-3"></i>
           Training Data
         </Link>
+        <Link href="/weaviate-monitor" className={`flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
+          location === '/weaviate-monitor' 
+            ? 'text-primary-600 bg-primary-50 border border-primary-200' 
+            : 'text-gray-600 hover:bg-gray-100'
+        }`}>
+          <i className="fas fa-brain w-5 h-5 mr-3"></i>
+          Weaviate Monitor
+        </Link>
         <Link href="/privacy-settings" className={`flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
           location === '/privacy-settings' 
             ? 'text-primary-600 bg-primary-50 border border-primary-200' 

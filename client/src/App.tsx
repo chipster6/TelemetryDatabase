@@ -8,6 +8,7 @@ import Dashboard from "@/pages/dashboard";
 import BiometricMonitor from "@/pages/biometric-monitor";
 import Analytics from "@/pages/analytics";
 import TrainingData from "@/pages/training-data";
+import WeaviateMonitor from "@/pages/weaviate-monitor";
 import PrivacySettings from "@/pages/privacy-settings";
 import Login from "@/pages/login";
 import NotFound from "@/pages/not-found";
@@ -64,6 +65,7 @@ function Router() {
           <Route path="/biometric-monitor" component={BiometricMonitor} />
           <Route path="/analytics" component={Analytics} />
           <Route path="/training-data" component={TrainingData} />
+          <Route path="/weaviate-monitor" component={WeaviateMonitor} />
           <Route path="/privacy-settings" component={PrivacySettings} />
           <Route component={NotFound} />
         </Switch>

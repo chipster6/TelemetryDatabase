@@ -46,8 +46,8 @@ An advanced AI-powered platform that explores the intersection of cognitive perf
 ### Prerequisites
 
 - Node.js 20+ 
-- PostgreSQL database (Neon Database recommended)
-- Weaviate Cloud account (optional for vector features)
+- **Weaviate Cloud instance** (REQUIRED - primary data store)
+- PostgreSQL database (minimal - authentication only)
 
 ### Installation
 
@@ -69,9 +69,12 @@ An advanced AI-powered platform that explores the intersection of cognitive perf
    
    Configure the following variables:
    ```env
+   # PRIMARY DATA STORE (REQUIRED)
+   WEAVIATE_URL=your_weaviate_cloud_url
+   WEAVIATE_API_KEY=your_weaviate_api_key
+   
+   # SECONDARY (Auth only)
    DATABASE_URL=your_postgresql_connection_string
-   WEAVIATE_URL=your_weaviate_cloud_url (optional)
-   WEAVIATE_API_KEY=your_weaviate_api_key (optional)
    ```
 
 4. **Initialize the database**
@@ -100,25 +103,26 @@ The application will be available at `http://localhost:5000`
 - **Wouter** for lightweight client-side routing
 - **WebSocket** integration for real-time biometric data
 
-### Backend Stack
+### Backend Stack - **Weaviate-First Architecture**
 - **Node.js** with Express.js framework
 - **TypeScript** with ES modules for modern development
-- **PostgreSQL** with Drizzle ORM for type-safe database operations
-- **Neon Database** for serverless PostgreSQL hosting
+- **Weaviate Cloud** as primary intelligent storage with infinite memory
+- **PostgreSQL** with Drizzle ORM (authentication only)
+- **RAG Pipeline** with semantic search and biometric awareness
 - **WebSocket Server** for real-time communication
 - **Post-Quantum Encryption** for advanced security
 
-### Database Schema
-```sql
--- Core entities
-Users              -- User authentication and profiles
-PromptTemplates    -- Reusable prompt configurations
-PromptSessions     -- Individual AI interaction sessions
-BiometricData      -- Real-time physiological measurements
-CognitiveCorrelations -- AI performance vs biometric analysis
-DeviceConnections  -- Connected biometric device management
-VectorDocuments    -- Semantic search and AI content storage
-```
+### Data Architecture - **Weaviate-First**
+
+**Primary Storage (Weaviate):**
+- **NexisConversation** - Complete conversation history with biometric context
+- **NexisMemoryNode** - Personal memories and learned patterns  
+- **NexisBiometricPattern** - Cognitive state patterns and effectiveness
+- **NexisPromptTemplate** - High-performing prompts with biometric optimization
+
+**Secondary Storage (PostgreSQL):**
+- **Users** - Authentication and basic profiles only
+- **Sessions** - Login session management only
 
 ## 📱 Core Components
 
@@ -200,10 +204,12 @@ npx drizzle-kit generate
 - `PUT /api/prompts/:id` - Update template
 - `DELETE /api/prompts/:id` - Delete template
 
-#### Vector Database
-- `GET /api/vector/status` - Weaviate connection status
-- `POST /api/vector/search` - Semantic search
-- `GET /api/vector/health` - System health check
+#### Weaviate (Primary Storage)
+- `GET /api/weaviate/status` - Weaviate connection and health status
+- `POST /api/weaviate/conversation` - Store conversation with biometric context
+- `GET /api/weaviate/search` - Semantic search across infinite conversation history
+- `POST /api/rag/generate` - RAG-powered AI responses with biometric awareness
+- `POST /api/training-export/start` - Export training data for custom LLM development
 
 ## 🔐 Security
 
@@ -243,9 +249,13 @@ Required for production deployment:
 
 ```env
 NODE_ENV=production
-DATABASE_URL=postgresql://user:password@host:port/database
+
+# PRIMARY DATA STORE (REQUIRED)
 WEAVIATE_URL=https://your-cluster.weaviate.network
 WEAVIATE_API_KEY=your_api_key
+
+# SECONDARY (Auth only)
+DATABASE_URL=postgresql://user:password@host:port/database
 ```
 
 ### Deployment Platforms
