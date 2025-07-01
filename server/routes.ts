@@ -560,14 +560,148 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Weaviate connection status endpoint
+  // Weaviate Primary Service endpoints
   app.get("/api/weaviate/status", async (req, res) => {
     try {
-      const status = await vectorDatabase.getConnectionStatus();
-      res.json(status);
+      const { weaviateService } = await import('./services/weaviate.service.js');
+      const stats = await weaviateService.getServiceStats();
+      res.json(stats);
     } catch (error) {
-      console.error('Error getting Weaviate status:', error);
-      res.status(500).json({ error: "Failed to get Weaviate status" });
+      console.error('Weaviate service status check failed:', error);
+      res.status(500).json({ error: "Status check failed" });
+    }
+  });
+
+  app.post("/api/weaviate/conversation", requireAuth, async (req, res) => {
+    try {
+      const { weaviateService } = await import('./services/weaviate.service.js');
+      const conversationData = req.body;
+      
+      // Generate IDs if not provided
+      conversationData.conversationId = conversationData.conversationId || `conv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      conversationData.sessionId = conversationData.sessionId || `sess_${Date.now()}`;
+      conversationData.timestamp = conversationData.timestamp || new Date().toISOString();
+      conversationData.userId = req.session.userId;
+
+      const result = await weaviateService.storeConversation(conversationData);
+      res.json({ success: true, conversationId: result });
+    } catch (error) {
+      console.error('Failed to store conversation in Weaviate:', error);
+      res.status(500).json({ error: "Failed to store conversation" });
+    }
+  });
+
+  app.get("/api/weaviate/conversations/search", requireAuth, async (req, res) => {
+    try {
+      const { weaviateService } = await import('./services/weaviate.service.js');
+      const { query, limit = 10 } = req.query;
+      
+      if (!query) {
+        return res.status(400).json({ error: "Query parameter required" });
+      }
+
+      const results = await weaviateService.searchConversations(query as string, parseInt(limit as string), req.session.userId);
+      res.json({ conversations: results });
+    } catch (error) {
+      console.error('Failed to search conversations:', error);
+      res.status(500).json({ error: "Failed to search conversations" });
+    }
+  });
+
+  app.post("/api/weaviate/conversations/biometric-search", requireAuth, async (req, res) => {
+    try {
+      const { weaviateService } = await import('./services/weaviate.service.js');
+      const { biometrics, limit = 10 } = req.body;
+      
+      if (!biometrics) {
+        return res.status(400).json({ error: "Biometrics data required" });
+      }
+
+      const results = await weaviateService.searchByBiometricState(biometrics, parseInt(limit), req.session.userId);
+      res.json({ conversations: results });
+    } catch (error) {
+      console.error('Failed to search by biometric state:', error);
+      res.status(500).json({ error: "Failed to search by biometric state" });
+    }
+  });
+
+  app.post("/api/weaviate/memory", requireAuth, async (req, res) => {
+    try {
+      const { weaviateService } = await import('./services/weaviate.service.js');
+      const memoryData = req.body;
+      
+      // Set user ID and defaults
+      memoryData.userId = req.session.userId;
+      memoryData.memoryId = memoryData.memoryId || `mem_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      memoryData.createdAt = memoryData.createdAt || new Date().toISOString();
+
+      const result = await weaviateService.storeMemory(memoryData);
+      res.json({ success: true, memoryId: result });
+    } catch (error) {
+      console.error('Failed to store memory:', error);
+      res.status(500).json({ error: "Failed to store memory" });
+    }
+  });
+
+  app.get("/api/weaviate/memories/search", requireAuth, async (req, res) => {
+    try {
+      const { weaviateService } = await import('./services/weaviate.service.js');
+      const { query, limit = 5 } = req.query;
+      
+      if (!query) {
+        return res.status(400).json({ error: "Query parameter required" });
+      }
+
+      const results = await weaviateService.searchMemories(query as string, req.session.userId, parseInt(limit as string));
+      res.json({ memories: results });
+    } catch (error) {
+      console.error('Failed to search memories:', error);
+      res.status(500).json({ error: "Failed to search memories" });
+    }
+  });
+
+  app.post("/api/weaviate/learn-patterns", requireAuth, async (req, res) => {
+    try {
+      const { weaviateService } = await import('./services/weaviate.service.js');
+      const patterns = await weaviateService.learnBiometricPatterns(req.session.userId);
+      res.json({ success: true, patternsLearned: patterns.length, patterns });
+    } catch (error) {
+      console.error('Failed to learn patterns:', error);
+      res.status(500).json({ error: "Failed to learn patterns" });
+    }
+  });
+
+  app.post("/api/weaviate/llm-context", requireAuth, async (req, res) => {
+    try {
+      const { weaviateService } = await import('./services/weaviate.service.js');
+      const { query, biometrics } = req.body;
+      
+      if (!query || !biometrics) {
+        return res.status(400).json({ error: "Query and biometrics required" });
+      }
+
+      const context = await weaviateService.buildLLMContext(query, biometrics, req.session.userId);
+      res.json(context);
+    } catch (error) {
+      console.error('Failed to build LLM context:', error);
+      res.status(500).json({ error: "Failed to build LLM context" });
+    }
+  });
+
+  app.post("/api/weaviate/strategy", requireAuth, async (req, res) => {
+    try {
+      const { weaviateService } = await import('./services/weaviate.service.js');
+      const { biometrics } = req.body;
+      
+      if (!biometrics) {
+        return res.status(400).json({ error: "Biometrics required" });
+      }
+
+      const strategy = await weaviateService.getOptimalResponseStrategy(biometrics, req.session.userId);
+      res.json({ strategy });
+    } catch (error) {
+      console.error('Failed to get optimal strategy:', error);
+      res.status(500).json({ error: "Failed to get optimal strategy" });
     }
   });
 

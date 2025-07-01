@@ -4,7 +4,7 @@
  */
 
 import { vectorDatabase } from './vector-database.js';
-import { initializeWeaviateSchema, getSchemaStats } from '../weaviate/schema.js';
+// Dynamic import will be used for schema functions
 import type { BiometricData } from '../../shared/schema.js';
 
 export interface ConversationData {
@@ -144,7 +144,7 @@ export class WeaviateService {
   private readonly HEALTH_CHECK_INTERVAL = 30000; // 30 seconds
 
   constructor() {
-    this.weaviateClient = vectorDatabase.getClient();
+    this.weaviateClient = null;
   }
 
   /**
@@ -152,6 +152,9 @@ export class WeaviateService {
    */
   async initialize(): Promise<void> {
     try {
+      // Get Weaviate client
+      this.weaviateClient = vectorDatabase.getClient();
+      
       if (!this.weaviateClient) {
         throw new Error('Weaviate client not available - check WEAVIATE_URL and WEAVIATE_API_KEY');
       }
@@ -163,7 +166,8 @@ export class WeaviateService {
         throw new Error('Weaviate health check failed');
       }
 
-      // Initialize schema
+      // Initialize schema dynamically
+      const { initializeWeaviateSchema } = await import('../weaviate/schema.js');
       await initializeWeaviateSchema(this.weaviateClient);
       
       this.initialized = true;
@@ -175,7 +179,8 @@ export class WeaviateService {
     } catch (error) {
       console.error('Failed to initialize Weaviate service:', error);
       this.healthStatus = 'error';
-      throw error;
+      this.weaviateClient = null;
+      // Don't throw to allow rest of app to work
     }
   }
 
@@ -1105,7 +1110,7 @@ export class WeaviateService {
         this.weaviateClient.graphql.aggregate().withClassName('NexisConversation').withFields('meta { count }').do(),
         this.weaviateClient.graphql.aggregate().withClassName('NexisMemoryNode').withFields('meta { count }').do(),
         this.weaviateClient.graphql.aggregate().withClassName('NexisBiometricPattern').withFields('meta { count }').do(),
-        getSchemaStats(this.weaviateClient)
+        this.getSchemaStatsInternal()
       ]);
 
       return {
@@ -1158,6 +1163,19 @@ export class WeaviateService {
       console.log(`Memory ${memoryId} importance updated to ${importance}`);
     } catch (error) {
       console.error('Failed to update memory importance:', error);
+    }
+  }
+
+  /**
+   * Get schema statistics internally
+   */
+  private async getSchemaStatsInternal(): Promise<any> {
+    try {
+      const { getSchemaStats } = await import('../weaviate/schema.js');
+      return await getSchemaStats(this.weaviateClient);
+    } catch (error) {
+      console.error('Failed to get schema stats:', error);
+      return { error: (error as Error).message };
     }
   }
 }
