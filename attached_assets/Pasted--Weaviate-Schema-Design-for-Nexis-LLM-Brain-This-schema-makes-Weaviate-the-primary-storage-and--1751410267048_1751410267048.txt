@@ -1,0 +1,403 @@
+// Weaviate Schema Design for Nexis LLM Brain
+// This schema makes Weaviate the primary storage and retrieval system
+
+const nexisWeaviateSchema = {
+classes: [
+{
+class: “NexisConversation”,
+description: “Complete conversation with biometric context”,
+vectorizer: “text2vec-openai”,
+moduleConfig: {
+“text2vec-openai”: {
+model: “ada-002”,
+modelVersion: “002”,
+type: “text”
+}
+},
+properties: [
+{
+name: “conversationId”,
+dataType: [“string”],
+description: “Unique conversation identifier”
+},
+{
+name: “timestamp”,
+dataType: [“date”],
+description: “When this conversation happened”
+},
+{
+name: “userMessage”,
+dataType: [“text”],
+description: “What the user said”,
+moduleConfig: {
+“text2vec-openai”: {
+skip: false,
+vectorizePropertyName: true
+}
+}
+},
+{
+name: “aiResponse”,
+dataType: [“text”],
+description: “What the AI responded”,
+moduleConfig: {
+“text2vec-openai”: {
+skip: false,
+vectorizePropertyName: true
+}
+}
+},
+{
+name: “conversationContext”,
+dataType: [“text”],
+description: “Full conversation history up to this point”
+},
+{
+name: “effectivenessScore”,
+dataType: [“number”],
+description: “How effective was this response (0-1)”
+},
+{
+name: “biometricSnapshot”,
+dataType: [“object”],
+description: “Biometric state during this interaction”,
+nestedProperties: [
+{
+name: “heartRate”,
+dataType: [“number”]
+},
+{
+name: “hrvSDNN”,
+dataType: [“number”]
+},
+{
+name: “stressLevel”,
+dataType: [“number”]
+},
+{
+name: “attentionLevel”,
+dataType: [“number”]
+},
+{
+name: “cognitiveLoad”,
+dataType: [“number”]
+},
+{
+name: “flowState”,
+dataType: [“number”]
+}
+]
+},
+{
+name: “neurodivergentMarkers”,
+dataType: [“object”],
+description: “ND-specific patterns detected”,
+nestedProperties: [
+{
+name: “hyperfocusActive”,
+dataType: [“boolean”]
+},
+{
+name: “contextSwitchCount”,
+dataType: [“int”]
+},
+{
+name: “sensoryLoadLevel”,
+dataType: [“number”]
+},
+{
+name: “executiveFunctionLoad”,
+dataType: [“number”]
+}
+]
+},
+{
+name: “environmentalFactors”,
+dataType: [“object”],
+nestedProperties: [
+{
+name: “soundLevel”,
+dataType: [“number”]
+},
+{
+name: “lightLevel”,
+dataType: [“number”]
+},
+{
+name: “temperature”,
+dataType: [“number”]
+},
+{
+name: “timeOfDay”,
+dataType: [“string”]
+}
+]
+},
+{
+name: “hasReference”,
+dataType: [“NexisMemoryNode”],
+description: “Links to related memories”
+}
+]
+},
+
+```
+{
+  class: "NexisMemoryNode",
+  description: "Individual memory/knowledge nodes",
+  vectorizer: "text2vec-openai",
+  properties: [
+    {
+      name: "content",
+      dataType: ["text"],
+      description: "The actual memory content"
+    },
+    {
+      name: "memoryType",
+      dataType: ["string"],
+      description: "Type: fact, experience, preference, skill"
+    },
+    {
+      name: "importance",
+      dataType: ["number"],
+      description: "How important is this memory (0-1)"
+    },
+    {
+      name: "lastAccessed",
+      dataType: ["date"]
+    },
+    {
+      name: "accessCount",
+      dataType: ["int"]
+    },
+    {
+      name: "emotionalValence",
+      dataType: ["number"],
+      description: "Emotional association (-1 to 1)"
+    },
+    {
+      name: "linkedConversations",
+      dataType: ["NexisConversation"],
+      description: "Conversations that reference this memory"
+    }
+  ]
+},
+
+{
+  class: "NexisBiometricPattern",
+  description: "Learned biometric patterns for different cognitive states",
+  properties: [
+    {
+      name: "patternName",
+      dataType: ["string"],
+      description: "e.g., 'deep_focus', 'creative_flow', 'stress_response'"
+    },
+    {
+      name: "biometricSignature",
+      dataType: ["object"],
+      description: "The biometric pattern that indicates this state"
+    },
+    {
+      name: "optimalResponseStrategies",
+      dataType: ["text[]"],
+      description: "Best ways to respond in this state"
+    },
+    {
+      name: "triggerConditions",
+      dataType: ["text[]"],
+      description: "What triggers this pattern"
+    }
+  ]
+},
+
+{
+  class: "NexisPromptTemplate",
+  description: "Effective prompt templates with context",
+  properties: [
+    {
+      name: "template",
+      dataType: ["text"]
+    },
+    {
+      name: "effectiveness",
+      dataType: ["number"]
+    },
+    {
+      name: "bestForCognitiveState",
+      dataType: ["string[]"],
+      description: "Which cognitive states this works best in"
+    },
+    {
+      name: "category",
+      dataType: ["string"]
+    }
+  ]
+}
+```
+
+]
+};
+
+// How to implement this in your code:
+
+class WeaviateNexisBrain {
+constructor(weaviateClient) {
+this.client = weaviateClient;
+}
+
+// Store a conversation with full context
+async storeConversation(conversationData) {
+const memoryObject = {
+class: ‘NexisConversation’,
+properties: {
+conversationId: conversationData.id,
+timestamp: new Date().toISOString(),
+userMessage: conversationData.userMessage,
+aiResponse: conversationData.aiResponse,
+conversationContext: conversationData.fullHistory,
+effectivenessScore: conversationData.effectiveness,
+biometricSnapshot: {
+heartRate: conversationData.biometrics.heartRate,
+hrvSDNN: conversationData.biometrics.hrv,
+stressLevel: conversationData.biometrics.stress,
+attentionLevel: conversationData.biometrics.attention,
+cognitiveLoad: conversationData.biometrics.cognitiveLoad,
+flowState: conversationData.biometrics.flow
+},
+neurodivergentMarkers: {
+hyperfocusActive: conversationData.ndMarkers.hyperfocus,
+contextSwitchCount: conversationData.ndMarkers.switches,
+sensoryLoadLevel: conversationData.ndMarkers.sensoryLoad,
+executiveFunctionLoad: conversationData.ndMarkers.execFunction
+},
+environmentalFactors: conversationData.environment
+}
+};
+
+```
+return await this.client.data
+  .creator()
+  .withClassName('NexisConversation')
+  .withProperties(memoryObject.properties)
+  .do();
+```
+
+}
+
+// Retrieve relevant context for RAG
+async getRelevantContext(query, currentBiometrics) {
+// Search by semantic similarity
+const semanticResults = await this.client.graphql
+.get()
+.withClassName(‘NexisConversation’)
+.withFields(‘userMessage aiResponse effectivenessScore biometricSnapshot { heartRate hrvSDNN cognitiveLoad }’)
+.withNearText({ concepts: [query] })
+.withLimit(5)
+.do();
+
+```
+// Also search for similar biometric states
+const biometricQuery = `
+  {
+    Get {
+      NexisConversation(
+        where: {
+          operator: And
+          operands: [{
+            path: ["biometricSnapshot", "cognitiveLoad"]
+            operator: GreaterThan
+            valueNumber: ${currentBiometrics.cognitiveLoad - 10}
+          }, {
+            path: ["biometricSnapshot", "cognitiveLoad"]
+            operator: LessThan
+            valueNumber: ${currentBiometrics.cognitiveLoad + 10}
+          }]
+        }
+        limit: 3
+      ) {
+        userMessage
+        aiResponse
+        effectivenessScore
+        biometricSnapshot {
+          cognitiveLoad
+          attentionLevel
+        }
+      }
+    }
+  }
+`;
+
+const biometricResults = await this.client.graphql.raw().query(biometricQuery).do();
+
+return {
+  semantic: semanticResults,
+  biometric: biometricResults
+};
+```
+
+}
+
+// Learn patterns from historical data
+async learnBiometricPatterns() {
+// Aggregate to find patterns
+const patterns = await this.client.graphql
+.aggregate()
+.withClassName(‘NexisConversation’)
+.withGroupBy([‘biometricSnapshot’])
+.withFields(‘groupedBy { value { heartRate hrvSDNN } } meta { count }’)
+.withWhere({
+operator: ‘GreaterThan’,
+path: [‘effectivenessScore’],
+valueNumber: 0.8
+})
+.do();
+
+```
+// Store learned patterns
+for (const pattern of patterns) {
+  await this.client.data
+    .creator()
+    .withClassName('NexisBiometricPattern')
+    .withProperties({
+      patternName: this.classifyPattern(pattern),
+      biometricSignature: pattern.groupedBy.value,
+      optimalResponseStrategies: this.deriveStrategies(pattern)
+    })
+    .do();
+}
+```
+
+}
+
+// Real-time context injection for LLM
+async buildLLMContext(currentQuery, currentBiometrics) {
+const relevantMemories = await this.getRelevantContext(currentQuery, currentBiometrics);
+
+```
+const context = {
+  instruction: "You are Nexis, a neurodivergent-optimized AI assistant.",
+  currentUserState: {
+    biometrics: currentBiometrics,
+    query: currentQuery
+  },
+  relevantHistory: relevantMemories.semantic,
+  similarBiometricStates: relevantMemories.biometric,
+  systemPrompt: this.generateDynamicPrompt(currentBiometrics)
+};
+
+return context;
+```
+
+}
+
+generateDynamicPrompt(biometrics) {
+if (biometrics.cognitiveLoad > 80) {
+return “User is experiencing high cognitive load. Be extra clear and break down complex ideas.”;
+} else if (biometrics.flowState > 70) {
+return “User is in flow state. Match their pace and depth. Be direct and technical.”;
+} else if (biometrics.stressLevel > 60) {
+return “User stress detected. Be calming, supportive, and solution-focused.”;
+}
+// … more conditions
+}
+}

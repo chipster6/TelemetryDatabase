@@ -5,6 +5,7 @@ import PromptRefinement from "@/components/ai-response";
 import BiometricPanel from "@/components/biometric-panel";
 import BiometricDashboard from "@/components/biometric-dashboard";
 import { WeaviateStatus } from "@/components/weaviate-status";
+import { NexisBrainStatus } from "@/components/nexis-brain-status";
 import { useBiometric } from "@/hooks/use-biometric";
 import { useWebSocket } from "@/hooks/use-websocket";
 
