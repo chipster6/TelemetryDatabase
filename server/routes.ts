@@ -547,6 +547,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Weaviate connection status endpoint
+  app.get("/api/weaviate/status", async (req, res) => {
+    try {
+      const status = await vectorDatabase.getConnectionStatus();
+      res.json(status);
+    } catch (error) {
+      console.error('Error getting Weaviate status:', error);
+      res.status(500).json({ error: "Failed to get Weaviate status" });
+    }
+  });
+
   // Vector database statistics
   app.get("/api/vector/stats", async (req, res) => {
     try {

@@ -50,13 +50,24 @@ export class WeaviateVectorDatabase {
     }
 
     try {
+      // Parse Weaviate URL to extract scheme and host
+      const url = new URL(weaviateUrl);
+      const scheme = url.protocol.replace(':', '');
+      const host = url.host;
+
+      console.log(`Connecting to Weaviate at ${scheme}://${host}`);
+
       this.client = weaviate.client({
-        scheme: 'https',
-        host: weaviateUrl,
+        scheme: scheme as 'http' | 'https',
+        host: host,
         apiKey: new ApiKey(weaviateApiKey),
-        headers: {}
+        headers: {
+          'X-OpenAI-Api-Key': '', // Remove any OpenAI dependencies
+        }
       });
 
+      // Test connection
+      await this.testConnection();
       await this.initializeSchema();
       this.isInitialized = true;
       console.log('Weaviate client initialized successfully');
@@ -64,6 +75,18 @@ export class WeaviateVectorDatabase {
       console.error('Failed to initialize Weaviate client:', error);
       console.log('Falling back to in-memory vector storage');
       this.initializeFallbackMode();
+    }
+  }
+
+  private async testConnection(): Promise<void> {
+    if (!this.client) throw new Error('Weaviate client not initialized');
+    
+    try {
+      const result = await this.client.misc.metaGetter().do();
+      console.log('Weaviate connection test successful, version:', result.version);
+    } catch (error) {
+      console.error('Weaviate connection test failed:', error);
+      throw error;
     }
   }
 
@@ -397,6 +420,56 @@ export class WeaviateVectorDatabase {
     } catch (error) {
       console.error('Export for cloud backup failed:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Get Weaviate connection status and health information
+   */
+  async getConnectionStatus(): Promise<{
+    connected: boolean;
+    mode: 'weaviate' | 'fallback';
+    version?: string;
+    documentsCount: number;
+    shardsCount: number;
+    error?: string;
+  }> {
+    try {
+      if (!this.client) {
+        return {
+          connected: false,
+          mode: 'fallback',
+          documentsCount: this.documents.size,
+          shardsCount: this.shards.size
+        };
+      }
+
+      const metaInfo = await this.client.misc.metaGetter().do();
+      
+      // Get document count from Weaviate
+      const aggregate = await this.client.graphql
+        .aggregate()
+        .withClassName(this.className)
+        .withFields('meta { count }')
+        .do();
+
+      const documentsCount = aggregate?.data?.Aggregate?.[this.className]?.[0]?.meta?.count || 0;
+
+      return {
+        connected: true,
+        mode: 'weaviate',
+        version: metaInfo.version,
+        documentsCount,
+        shardsCount: 1, // Weaviate manages sharding automatically
+      };
+    } catch (error) {
+      return {
+        connected: false,
+        mode: this.client ? 'weaviate' : 'fallback',
+        documentsCount: this.documents.size,
+        shardsCount: this.shards.size,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
     }
   }
 

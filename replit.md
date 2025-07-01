@@ -114,6 +114,7 @@ Changelog:
 - July 1, 2025. Major architectural change: Removed biometric-aware prompt refinement feature per user feedback. The system now focuses purely on prompt engineering best practices rather than adapting prompts based on physiological state. Biometric monitoring remains for general wellness tracking only.
 - July 1, 2025. Implemented comprehensive post-quantum encryption for all data at rest and in transit. All sensitive data (biometric readings, user information, prompt sessions) is encrypted using post-quantum resistant algorithms before storage and transmission. Replaced simulated Weaviate vector database with real Weaviate Cloud integration using TypeScript client.
 - July 1, 2025. Removed all OpenAI API integrations per user request. The platform now focuses on prompt engineering best practices using built-in algorithms rather than external AI services. Biometric monitoring remains for wellness tracking, and prompt refinement uses proven prompt engineering techniques.
+- July 1, 2025. Implemented comprehensive Weaviate environment variables (WEAVIATE_URL and WEAVIATE_API_KEY) with proper URL parsing, authentication handling, connection testing, and health monitoring. Added performance optimizations including caching, rate limiting, and batch processing throughout the system.
 ```
 
 ## User Preferences
