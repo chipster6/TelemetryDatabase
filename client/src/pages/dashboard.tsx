@@ -6,6 +6,7 @@ import BiometricPanel from "@/components/biometric-panel";
 import BiometricDashboard from "@/components/biometric-dashboard";
 import { WeaviateStatus } from "@/components/weaviate-status";
 import { NexisBrainStatus } from "@/components/nexis-brain-status";
+import { WeaviatePrimaryStatus } from "@/components/weaviate-primary-status";
 import { useBiometric } from "@/hooks/use-biometric";
 import { useWebSocket } from "@/hooks/use-websocket";
 
@@ -70,7 +71,9 @@ export default function Dashboard() {
               </div>
               <div className="space-y-4">
                 <BiometricPanel currentBiometrics={currentBiometrics} />
+                <WeaviatePrimaryStatus />
                 <WeaviateStatus />
+                <NexisBrainStatus />
               </div>
             </div>
 
