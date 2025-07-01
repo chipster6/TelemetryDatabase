@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { Link, useLocation } from "wouter";
 
 interface DeviceConnection {
   id: number;
@@ -11,6 +12,7 @@ export default function Sidebar() {
   const { data: devices = [] } = useQuery<DeviceConnection[]>({
     queryKey: ['/api/devices'],
   });
+  const [location] = useLocation();
 
   const getStatusColor = (status: string) => {
     switch (status) {
