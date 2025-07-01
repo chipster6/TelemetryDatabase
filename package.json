@@ -9,6 +9,7 @@
     "start": "NODE_ENV=production node dist/index.js",
     "check": "tsc",
 "test:migration": "tsx test/migration-test.ts",
+"test:store-conversation": "tsx test/store-conversation-test.ts",
     "db:push": "drizzle-kit push"
   },
   "dependencies": {
