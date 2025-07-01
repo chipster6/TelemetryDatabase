@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import Sidebar from "@/components/sidebar";
 import PromptInterface from "@/components/prompt-interface";
-import AIResponse from "@/components/ai-response";
+import PromptRefinement from "@/components/ai-response";
 import BiometricPanel from "@/components/biometric-panel";
 import BiometricDashboard from "@/components/biometric-dashboard";
 import { useBiometric } from "@/hooks/use-biometric";
@@ -71,8 +71,8 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* AI Response Area */}
-            <AIResponse />
+            {/* Prompt Refinement Area */}
+            <PromptRefinement />
 
             {/* Biometric Analytics Dashboard */}
             <BiometricDashboard />
