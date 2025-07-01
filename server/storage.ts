@@ -19,12 +19,16 @@ import {
   type InsertDeviceConnection
 } from "@shared/schema";
 import { postQuantumEncryption } from './services/encryption.js';
+import { db } from './db.js';
+import { eq } from 'drizzle-orm';
+import bcrypt from 'bcryptjs';
 
 export interface IStorage {
   // User methods
   getUser(id: number): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
+  authenticateUser(username: string, password: string): Promise<User | undefined>;
 
   // Prompt template methods
   getPromptTemplates(userId?: number): Promise<PromptTemplate[]>;

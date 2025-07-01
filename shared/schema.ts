@@ -8,6 +8,12 @@ export const users = pgTable("users", {
   password: text("password").notNull(),
 });
 
+export const sessions = pgTable("sessions", {
+  sid: text("sid").primaryKey(),
+  sess: jsonb("sess").notNull(),
+  expire: timestamp("expire").notNull(),
+});
+
 export const promptTemplates = pgTable("prompt_templates", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
