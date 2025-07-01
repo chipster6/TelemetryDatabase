@@ -1,0 +1,390 @@
+# Nexis TelemetryDatabase: Weaviate-First Architecture Migration Prompts
+
+## Prompt 1: Create Weaviate Schema File
+
+**Task:** Create a comprehensive Weaviate schema for the Nexis platform that will replace PostgreSQL as the primary data store.
+
+**Requirements:**
+
+- Create a new file: `server/weaviate/schema.ts`
+- Define the following Weaviate classes:
+1. `NexisConversation` - Store all conversation data with biometric context
+1. `NexisMemoryNode` - Individual memory/knowledge nodes for the AI
+1. `NexisBiometricPattern` - Learned patterns from biometric data
+1. `NexisPromptTemplate` - Effective prompts with their performance data
+
+**Schema specifications:**
+
+- Each `NexisConversation` should include:
+  - User message and AI response
+  - Complete biometric snapshot (heart rate, HRV, stress, attention, cognitive load, flow state)
+  - Neurodivergent markers (hyperfocus, context switches, sensory load, executive function)
+  - Environmental factors (sound, light, temperature, time of day)
+  - Effectiveness score (0-1)
+  - Timestamp and conversation ID
+  - Vector embeddings for semantic search
+- Use OpenAI text2vec for vectorization
+- Include proper data types (text, number, date, object, boolean)
+- Set up cross-references between classes
+- Export the schema and a function to initialize it in Weaviate
+
+**Expected output:** A TypeScript file that exports the complete Weaviate schema and initialization functions.
+
+-----
+
+## Prompt 2: Create Database Migration Script
+
+**Task:** Build a migration script that moves all existing PostgreSQL data to Weaviate.
+
+**Requirements:**
+
+- Create file: `migrations/postgres-to-weaviate.ts`
+- The script should:
+1. Connect to both PostgreSQL and Weaviate
+1. Read all data from these PostgreSQL tables:
+  - `BiometricData`
+  - `PromptSessions`
+  - `CognitiveCorrelations`
+  - `VectorDocuments`
+1. Transform the data to fit the new Weaviate schema
+1. Batch import into Weaviate for efficiency
+1. Verify data integrity after migration
+1. Create a rollback mechanism
+
+**Key transformations:**
+
+- Combine `BiometricData` + `PromptSessions` → `NexisConversation`
+- Embed `CognitiveCorrelations` data directly into conversations
+- Convert `VectorDocuments` → `NexisMemoryNode`
+- Preserve all timestamps and relationships
+
+**Include:**
+
+- Progress logging
+- Error handling with detailed messages
+- Ability to resume if interrupted
+- Final report showing records migrated
+
+-----
+
+## Prompt 3: Update Environment Configuration
+
+**Task:** Modify the environment configuration to prioritize Weaviate over PostgreSQL.
+
+**Requirements:**
+
+- Update `.env.example` file to show:
+  
+  ```
+  # PRIMARY DATA STORE (REQUIRED)
+  WEAVIATE_URL=https://your-cluster.weaviate.network
+  WEAVIATE_API_KEY=your_weaviate_api_key
+  
+  # SECONDARY (Auth only)
+  DATABASE_URL=postgresql://user:password@host:port/database
+  ```
+- Update `server/config.ts` or similar configuration file to:
+1. Make Weaviate credentials required
+1. Add Weaviate health check on startup
+1. Log error and exit if Weaviate unavailable
+1. Keep PostgreSQL only for user authentication
+- Update README.md requirements section to list Weaviate as required, PostgreSQL as “minimal - auth only”
+
+-----
+
+## Prompt 4: Create Weaviate Service Layer
+
+**Task:** Build a comprehensive service layer for all Weaviate operations.
+
+**Requirements:**
+
+- Create file: `server/services/weaviate.service.ts`
+- Implement these methods:
+
+```typescript
+class WeaviateService {
+  // Initialize and health check
+  async initialize(): Promise<void>
+  async checkHealth(): Promise<boolean>
+  
+  // Conversation operations
+  async storeConversation(data: ConversationData): Promise<string>
+  async getConversation(id: string): Promise<Conversation>
+  async searchConversations(query: string, limit: number): Promise<Conversation[]>
+  async searchByBiometricState(biometrics: BiometricData): Promise<Conversation[]>
+  
+  // Memory operations
+  async storeMemory(content: string, type: string): Promise<string>
+  async searchMemories(query: string): Promise<Memory[]>
+  async updateMemoryImportance(id: string, importance: number): Promise<void>
+  
+  // Pattern learning
+  async learnBiometricPatterns(): Promise<BiometricPattern[]>
+  async getOptimalResponseStrategy(currentBiometrics: BiometricData): Promise<Strategy>
+  
+  // RAG (Retrieval-Augmented Generation) support
+  async buildLLMContext(query: string, biometrics: BiometricData): Promise<LLMContext>
+}
+```
+
+Include proper error handling, logging, and connection pooling.
+
+-----
+
+## Prompt 5: Update API Routes for Weaviate-First
+
+**Task:** Modify all API routes to save to Weaviate first, with minimal PostgreSQL usage.
+
+**Requirements:**
+
+- Update `server/routes.ts` or individual route files
+- Change these endpoints:
+
+1. **POST /api/biometric**
+- OLD: Save to PostgreSQL `BiometricData` table
+- NEW: Create `NexisConversation` in Weaviate with biometric snapshot
+1. **POST /api/prompts**
+- OLD: Save to PostgreSQL `PromptTemplates`
+- NEW: Create `NexisPromptTemplate` in Weaviate
+1. **GET /api/biometric**
+- OLD: Query PostgreSQL with SQL
+- NEW: Use Weaviate GraphQL to search by semantic similarity
+1. **POST /api/vector/search**
+- OLD: Supplementary vector search
+- NEW: Primary search across all conversation history
+
+**Pattern to follow:**
+
+```typescript
+// OLD pattern
+const result = await db.insert(BiometricData).values(data);
+await weaviate.index(result.id); // Secondary
+
+// NEW pattern
+const weaviateResult = await weaviateService.storeConversation(data);
+// Only store minimal reference in PostgreSQL if needed
+```
+
+-----
+
+## Prompt 6: Create RAG Pipeline for LLM
+
+**Task:** Build a Retrieval-Augmented Generation pipeline that uses Weaviate to provide context for LLM responses.
+
+**Requirements:**
+
+- Create file: `server/services/rag.service.ts`
+- Implement:
+
+```typescript
+class RAGService {
+  // Main RAG method
+  async generateWithContext(
+    userQuery: string,
+    currentBiometrics: BiometricData,
+    userId: string
+  ): Promise<AIResponse> {
+    // 1. Search Weaviate for relevant past conversations
+    // 2. Find similar biometric states
+    // 3. Identify effective response patterns
+    // 4. Build comprehensive context
+    // 5. Generate response with context
+  }
+  
+  // Helper methods
+  async findRelevantConversations(query: string, limit: number): Promise<Conversation[]>
+  async findSimilarBiometricStates(biometrics: BiometricData): Promise<BiometricContext[]>
+  async identifyEffectivePatterns(conversations: Conversation[]): Promise<Pattern[]>
+  async buildPromptWithContext(query: string, context: Context): Promise<string>
+}
+```
+
+The context should include:
+
+- Previous similar conversations
+- What worked well in similar cognitive states
+- User’s typical patterns
+- Environmental factors
+
+-----
+
+## Prompt 7: Update Frontend Data Flow
+
+**Task:** Modify the frontend to work with the new Weaviate-first architecture.
+
+**Requirements:**
+
+- Update `client/src/hooks/` files that fetch data
+- Change from expecting PostgreSQL-structured data to Weaviate GraphQL responses
+- Update these components:
+
+1. **Biometric Dashboard**
+- Fetch from Weaviate’s `NexisConversation` class
+- Display conversation history with biometric context
+1. **Search Results**
+- Show semantic similarity scores
+- Display biometric state during past interactions
+1. **Prompt Templates**
+- Load from Weaviate with effectiveness scores
+- Show which cognitive states they work best in
+
+**Example query structure:**
+
+```typescript
+const searchQuery = `{
+  Get {
+    NexisConversation(
+      nearText: { concepts: ["${userQuery}"] }
+      limit: 10
+    ) {
+      userMessage
+      aiResponse
+      effectivenessScore
+      biometricSnapshot {
+        heartRate
+        cognitiveLoad
+      }
+    }
+  }
+}`;
+```
+
+-----
+
+## Prompt 8: Create LLM Training Data Export
+
+**Task:** Build functionality to export Weaviate data in a format suitable for training a custom LLM.
+
+**Requirements:**
+
+- Create file: `server/services/training-export.service.ts`
+- Implement data export that creates JSONL files with:
+
+```typescript
+interface TrainingDataPoint {
+  instruction: string;           // System prompt
+  input: string;                // User message
+  output: string;               // AI response
+  biometric_context: {
+    heartRate: number;
+    hrv: number;
+    cognitiveLoad: number;
+    attentionLevel: number;
+    stressLevel: number;
+    flowState: number;
+  };
+  effectiveness: number;        // 0-1 score
+  neurodivergent_markers: {
+    hyperfocus: boolean;
+    contextSwitches: number;
+    sensoryLoad: number;
+  };
+}
+```
+
+- Filter for high-effectiveness interactions (>0.8)
+- Group by cognitive states
+- Include export scheduling (daily/weekly)
+- Compress output files
+- Track what’s been exported to avoid duplicates
+
+-----
+
+## Prompt 9: Add Weaviate Monitoring Dashboard
+
+**Task:** Create a monitoring dashboard page to track Weaviate performance and data quality.
+
+**Requirements:**
+
+- Create new page: `client/src/pages/WeaviateMonitor.tsx`
+- Display:
+1. Total objects per class
+1. Vector search performance metrics
+1. Most common query patterns
+1. Data quality indicators
+1. Storage usage
+1. Recent import/export operations
+- Add API endpoint: `GET /api/weaviate/stats`
+- Update navigation to include “Vector Database Monitor”
+- Show real-time updates using WebSocket connection
+
+-----
+
+## Prompt 10: Write Comprehensive Tests
+
+**Task:** Create test suites for the new Weaviate functionality.
+
+**Requirements:**
+
+- Create test files:
+  - `server/services/__tests__/weaviate.service.test.ts`
+  - `server/services/__tests__/rag.service.test.ts`
+  - `migrations/__tests__/postgres-to-weaviate.test.ts`
+- Test scenarios:
+1. Successful data migration
+1. Biometric search accuracy
+1. RAG context building
+1. Error handling when Weaviate is down
+1. Data integrity between systems
+1. Performance under load
+- Use Jest or similar testing framework
+- Include integration tests with test Weaviate instance
+- Add GitHub Action for automated testing
+
+-----
+
+## Prompt 11: Update Documentation
+
+**Task:** Completely update all documentation to reflect the Weaviate-first architecture.
+
+**Requirements:**
+
+- Update README.md with:
+  - New architecture diagram showing Weaviate as primary
+  - Updated setup instructions
+  - New API endpoint documentation
+  - Migration guide from old to new architecture
+- Create `docs/WEAVIATE_ARCHITECTURE.md` explaining:
+  - Why Weaviate over PostgreSQL
+  - How the RAG pipeline works
+  - How biometric data enhances AI responses
+  - Future LLM training pipeline
+- Update inline code comments
+- Add JSDoc comments to all new functions
+- Create troubleshooting guide
+
+-----
+
+## Prompt 12: Implement Rollback Safety
+
+**Task:** Create a safe rollback mechanism in case issues arise after migration.
+
+**Requirements:**
+
+- Create file: `migrations/rollback-to-postgres.ts`
+- Implement:
+1. Export all Weaviate data back to PostgreSQL format
+1. Feature flag to run in “dual-write” mode during transition
+1. Data verification between both systems
+1. One-command rollback if needed
+- Add environment variable: `ENABLE_DUAL_WRITE=true/false`
+- Log all discrepancies between systems
+- Create admin endpoint to trigger rollback
+
+-----
+
+## PRIORITY ORDER:
+
+1. Start with Prompt 1 (Schema) - This is the foundation
+1. Then Prompt 4 (Service Layer) - Core functionality
+1. Then Prompt 2 (Migration) - Move the data
+1. Then Prompt 5 (Update Routes) - Switch the flow
+1. Complete remaining prompts based on your timeline
+
+## SUCCESS CRITERIA:
+
+- All biometric and conversation data primarily stored in Weaviate
+- PostgreSQL only handles user authentication
+- Semantic search replaces SQL queries
+- RAG pipeline provides contextual AI responses
+- System ready for custom LLM training

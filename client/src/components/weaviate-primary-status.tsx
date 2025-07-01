@@ -29,7 +29,7 @@ export function WeaviatePrimaryStatus() {
 
   const fetchStorageStatus = async () => {
     try {
-      const response = await fetch('/api/weaviate-storage/status');
+      const response = await fetch('/api/weaviate/status');
       const data = await response.json();
       setStatus(data);
     } catch (error) {
@@ -53,7 +53,7 @@ export function WeaviatePrimaryStatus() {
   const handleLearnPatterns = async () => {
     setLearning(true);
     try {
-      const response = await fetch('/api/weaviate-storage/learn', {
+      const response = await fetch('/api/weaviate/learn-patterns', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
@@ -111,25 +111,25 @@ export function WeaviatePrimaryStatus() {
           <div className="flex items-center gap-2">
             <MessageSquare className="h-4 w-4 text-blue-500" />
             <span>Conversations</span>
-            <Badge variant="secondary">{status.conversations.toLocaleString()}</Badge>
+            <Badge variant="secondary">{(status.conversations || 0).toLocaleString()}</Badge>
           </div>
           
           <div className="flex items-center gap-2">
             <BookOpen className="h-4 w-4 text-green-500" />
             <span>Memories</span>
-            <Badge variant="secondary">{status.memories.toLocaleString()}</Badge>
+            <Badge variant="secondary">{(status.memories || 0).toLocaleString()}</Badge>
           </div>
           
           <div className="flex items-center gap-2">
             <TrendingUp className="h-4 w-4 text-purple-500" />
             <span>Patterns</span>
-            <Badge variant="secondary">{status.patterns.toLocaleString()}</Badge>
+            <Badge variant="secondary">{(status.patterns || 0).toLocaleString()}</Badge>
           </div>
           
           <div className="flex items-center gap-2">
             <Network className="h-4 w-4 text-orange-500" />
-            <span>Knowledge</span>
-            <Badge variant="secondary">{status.knowledge.toLocaleString()}</Badge>
+            <span>Schema</span>
+            <Badge variant="secondary">{status.schema?.nexisClasses || 0}</Badge>
           </div>
         </div>
 
@@ -137,7 +137,7 @@ export function WeaviatePrimaryStatus() {
           <div className="flex items-center justify-between text-sm">
             <div className="flex items-center gap-2 text-gray-500">
               <Brain className="h-3 w-3" />
-              Total Storage: {status.totalStorage.toLocaleString()} objects
+              Total: {((status.conversations || 0) + (status.memories || 0) + (status.patterns || 0)).toLocaleString()} objects
             </div>
             <div className="text-xs text-gray-400">
               {new Date(status.lastUpdated).toLocaleTimeString()}
