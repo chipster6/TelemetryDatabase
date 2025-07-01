@@ -111,6 +111,7 @@ Changelog:
 - June 29, 2025. Initial setup
 - June 29, 2025. Fixed startup issues: resolved missing chart.js dependency and CSS import order problems. App now running successfully with real-time biometric simulation.
 - June 29, 2025. Implemented comprehensive vector database architecture with Weaviate, post-quantum encryption, sharded storage, semantic search, telemetry analytics, daily compression, and cloud export capabilities. All advanced features operational.
+- July 1, 2025. Major architectural change: Removed biometric-aware prompt refinement feature per user feedback. The system now focuses purely on prompt engineering best practices rather than adapting prompts based on physiological state. Biometric monitoring remains for general wellness tracking only.
 ```
 
 ## User Preferences

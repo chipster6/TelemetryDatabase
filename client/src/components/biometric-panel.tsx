@@ -42,7 +42,8 @@ export default function BiometricPanel({ currentBiometrics }: BiometricPanelProp
     <>
       {/* Current Biometric Status */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
-        <h4 className="text-sm font-semibold text-gray-900 mb-3">Current Biometric State</h4>
+        <h4 className="text-sm font-semibold text-gray-900 mb-3">Wellness Monitoring</h4>
+        <p className="text-xs text-gray-500 mb-3">Track your work patterns and stress levels while using the platform</p>
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <span className="text-sm text-gray-600">Heart Rate</span>

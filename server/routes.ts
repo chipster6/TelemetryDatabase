@@ -27,40 +27,52 @@ function generateRefinedPrompt(biometricContext: any, systemPrompt: string, user
   const hasExamples = userInput.toLowerCase().includes('example') || userInput.toLowerCase().includes('like');
   
   // Generate refined prompt with proper structure
-  let refinedPrompt = `You are a ${role} with deep expertise in your field. `;
+  let refinedPrompt = `You are a ${role} with deep expertise in your field.\n\n`;
   
-  // Add biometric context if available for optimal cognitive state
-  if (biometricContext) {
-    const stress = biometricContext.stressLevel || 50;
-    const attention = biometricContext.attentionLevel || 50;
-    
-    if (stress < 30 && attention > 70) {
-      refinedPrompt += "The user is in an optimal cognitive state for complex, detailed work. ";
-    } else if (stress > 60) {
-      refinedPrompt += "The user may be experiencing some stress, so provide clear, structured responses. ";
-    } else if (attention < 40) {
-      refinedPrompt += "The user's attention may be divided, so be concise and engaging. ";
-    }
+  // Enhance the original prompt with context
+  refinedPrompt += `## Task\n${userInput}\n\n`;
+  
+  // Add comprehensive prompt engineering best practices
+  refinedPrompt += "## Response Guidelines\n";
+  refinedPrompt += "Please provide a comprehensive response that includes:\n\n";
+  
+  // Add structure and best practices based on input analysis
+  if (!hasContext) {
+    refinedPrompt += "**Context & Background:**\n";
+    refinedPrompt += "- Relevant background information\n";
+    refinedPrompt += "- Current industry standards and best practices\n";
+    refinedPrompt += "- Important considerations or prerequisites\n\n";
   }
   
-  // Enhance the original prompt
-  refinedPrompt += `\n\nTask: ${userInput}\n\n`;
+  refinedPrompt += "**Core Content:**\n";
+  refinedPrompt += "- Clear, actionable insights and advice\n";
+  refinedPrompt += "- Step-by-step guidance where applicable\n";
+  refinedPrompt += "- Specific recommendations tailored to the request\n\n";
   
-  // Add structure and best practices
-  if (!hasContext) {
-    refinedPrompt += "Please consider:\n- Relevant background context\n- Current industry standards\n- Best practices in this field\n\n";
+  if (!hasExamples && inputWords < 15) {
+    refinedPrompt += "**Examples & Applications:**\n";
+    refinedPrompt += "- Concrete examples to illustrate key points\n";
+    refinedPrompt += "- Real-world use cases or scenarios\n";
+    refinedPrompt += "- Practical implementation details\n\n";
   }
   
   if (!hasConstraints) {
-    refinedPrompt += "Format requirements:\n- Provide clear, actionable insights\n- Use structured formatting when helpful\n- Include specific examples where appropriate\n\n";
+    refinedPrompt += "**Format & Structure:**\n";
+    refinedPrompt += "- Use clear headings and organized sections\n";
+    refinedPrompt += "- Include bullet points or numbered lists for clarity\n";
+    refinedPrompt += "- Highlight key takeaways or important notes\n\n";
   }
   
-  if (!hasExamples && inputWords < 10) {
-    refinedPrompt += "Please include:\n- Concrete examples to illustrate key points\n- Step-by-step guidance where applicable\n- Relevant use cases or scenarios\n\n";
-  }
+  // Add professional closing instruction
+  refinedPrompt += "## Quality Standards\n";
+  refinedPrompt += "Ensure your response is:\n";
+  refinedPrompt += "- Comprehensive yet focused on the specific request\n";
+  refinedPrompt += "- Practical and immediately actionable\n";
+  refinedPrompt += "- Backed by expertise and current best practices\n";
+  refinedPrompt += "- Well-structured and easy to follow\n\n";
   
-  // Add closing instruction
-  refinedPrompt += "Ensure your response is comprehensive, practical, and directly addresses the user's needs with expert-level insight.";
+  refinedPrompt += "---\n\n";
+  refinedPrompt += `**User's Original Request:** ${userInput}`;
   
   return refinedPrompt;
 }
