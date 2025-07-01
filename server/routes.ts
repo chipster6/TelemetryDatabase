@@ -8,6 +8,7 @@ import { vectorDatabase } from "./services/vector-database";
 import { analyticsService } from "./services/analytics";
 import { cloudExportService } from "./services/cloud-export";
 import { postQuantumEncryption } from "./services/encryption";
+import { anonymizationService } from "./services/anonymization";
 import { z } from "zod";
 import { insertPromptSessionSchema, insertPromptTemplateSchema } from "@shared/schema";
 
@@ -269,17 +270,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get biometric data (encrypted in transit)
+  // Get anonymized biometric statistics
   app.get("/api/biometric", async (req, res) => {
     try {
       const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
-      const data = await storage.getBiometricData(undefined, limit);
+      const rawData = await storage.getBiometricData(undefined, limit);
       
-      // Encrypt sensitive biometric data for transmission
-      const encryptedResponse = await encryptResponse(data, true);
-      res.json(encryptedResponse);
+      // Generate anonymized statistics instead of raw data
+      const anonymizedStats = anonymizationService.generateAnonymizedStats(rawData);
+      res.json(anonymizedStats);
     } catch (error) {
-      res.status(500).json({ error: "Failed to fetch biometric data" });
+      res.status(500).json({ error: "Failed to fetch biometric statistics" });
+    }
+  });
+
+  // Get anonymized biometric time series for charts
+  app.get("/api/biometric/timeseries", async (req, res) => {
+    try {
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 100;
+      const maxPoints = req.query.maxPoints ? parseInt(req.query.maxPoints as string) : 20;
+      const rawData = await storage.getBiometricData(undefined, limit);
+      
+      // Generate anonymized time series data
+      const timeSeries = anonymizationService.generateAnonymizedTimeSeries(rawData, maxPoints);
+      res.json(timeSeries);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch biometric time series" });
     }
   });
 

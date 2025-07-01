@@ -4,70 +4,87 @@ import { Chart, registerables } from "chart.js";
 
 Chart.register(...registerables);
 
-interface BiometricData {
-  id: number;
-  heartRate?: number | null;
-  hrv?: number | null;
-  stressLevel?: number | null;
-  attentionLevel?: number | null;
-  cognitiveLoad?: number | null;
-  environmentalData?: {
-    soundLevel?: number;
-    temperature?: number;
-    lightLevel?: number;
-  } | null;
-  timestamp?: string;
+interface AnonymizedBiometricStats {
+  totalSamples: number;
+  timeRange: {
+    start: number;
+    end: number;
+  };
+  aggregatedMetrics: {
+    heartRate: {
+      min: number;
+      max: number;
+      avg: number;
+      trend: 'increasing' | 'decreasing' | 'stable';
+    };
+    hrv: {
+      min: number;
+      max: number;
+      avg: number;
+      trend: 'increasing' | 'decreasing' | 'stable';
+    };
+    stress: {
+      low: number;
+      medium: number;
+      high: number;
+    };
+    attention: {
+      low: number;
+      medium: number;
+      high: number;
+    };
+  };
+  wellnessScore: number;
+  recommendations: string[];
 }
 
-interface BiometricStats {
-  totalSamples: number;
-  avgHeartRate: number;
-  avgHRV: number;
-  avgStressLevel: number;
-  avgAttentionLevel: number;
+interface AnonymizedTimeSeriesPoint {
+  timestamp: number;
+  wellnessScore: number;
+  stressLevel: 'low' | 'medium' | 'high';
+  attentionLevel: 'low' | 'medium' | 'high';
 }
 
 export default function BiometricDashboard() {
-  const hrvChartRef = useRef<HTMLCanvasElement>(null);
-  const cognitiveChartRef = useRef<HTMLCanvasElement>(null);
-  const hrvChartInstance = useRef<Chart | null>(null);
-  const cognitiveChartInstance = useRef<Chart | null>(null);
+  const wellnessChartRef = useRef<HTMLCanvasElement>(null);
+  const distributionChartRef = useRef<HTMLCanvasElement>(null);
+  const wellnessChartInstance = useRef<Chart | null>(null);
+  const distributionChartInstance = useRef<Chart | null>(null);
 
-  const { data: biometricData = [] } = useQuery<BiometricData[]>({
+  const { data: biometricStats } = useQuery<AnonymizedBiometricStats>({
     queryKey: ['/api/biometric'],
-    refetchInterval: 5000, // Refresh every 5 seconds
+    refetchInterval: 5000,
   });
 
-  const { data: stats } = useQuery<BiometricStats>({
-    queryKey: ['/api/biometric/stats'],
-    refetchInterval: 10000, // Refresh every 10 seconds
+  const { data: timeSeriesData = [] } = useQuery<AnonymizedTimeSeriesPoint[]>({
+    queryKey: ['/api/biometric/timeseries'],
+    refetchInterval: 5000,
   });
 
-  // Initialize HRV Chart
+  // Initialize Wellness Score Chart
   useEffect(() => {
-    if (!hrvChartRef.current || biometricData.length === 0) return;
+    if (!wellnessChartRef.current || timeSeriesData.length === 0) return;
 
-    if (hrvChartInstance.current) {
-      hrvChartInstance.current.destroy();
+    if (wellnessChartInstance.current) {
+      wellnessChartInstance.current.destroy();
     }
 
-    const ctx = hrvChartRef.current.getContext('2d');
+    const ctx = wellnessChartRef.current.getContext('2d');
     if (!ctx) return;
 
-    const recentData = biometricData.slice(-20).filter(d => d.hrv !== null);
-    const labels = recentData.map((_, index) => {
-      const time = new Date(Date.now() - (recentData.length - 1 - index) * 180000); // 3-minute intervals
+    const labels = timeSeriesData.map(point => {
+      const time = new Date(point.timestamp);
       return time.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
     });
 
-    hrvChartInstance.current = new Chart(ctx, {
+    wellnessChartInstance.current = new Chart(ctx, {
       type: 'line',
       data: {
         labels,
         datasets: [{
-          label: 'HRV (ms)',
-          data: recentData.map(d => d.hrv || 0),
-          borderColor: '#10B981',
+          label: 'Wellness Score',
+          data: timeSeriesData.map(point => point.wellnessScore),
+          borderColor: '#10b981',
           backgroundColor: 'rgba(16, 185, 129, 0.1)',
           borderWidth: 2,
           fill: true,
@@ -77,59 +94,50 @@ export default function BiometricDashboard() {
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        plugins: {
-          legend: { display: false }
-        },
         scales: {
           y: {
-            beginAtZero: false,
-            min: 20,
-            max: 60
+            beginAtZero: true,
+            max: 100,
+            grid: { color: 'rgba(255, 255, 255, 0.1)' },
+            ticks: { color: '#9ca3af' }
+          },
+          x: {
+            grid: { color: 'rgba(255, 255, 255, 0.1)' },
+            ticks: { color: '#9ca3af' }
+          }
+        },
+        plugins: {
+          legend: {
+            labels: { color: '#9ca3af' }
           }
         }
       }
     });
+  }, [timeSeriesData]);
 
-    return () => {
-      if (hrvChartInstance.current) {
-        hrvChartInstance.current.destroy();
-        hrvChartInstance.current = null;
-      }
-    };
-  }, [biometricData]);
-
-  // Initialize Cognitive Chart
+  // Initialize Distribution Chart
   useEffect(() => {
-    if (!cognitiveChartRef.current) return;
+    if (!distributionChartRef.current || !biometricStats) return;
 
-    if (cognitiveChartInstance.current) {
-      cognitiveChartInstance.current.destroy();
+    if (distributionChartInstance.current) {
+      distributionChartInstance.current.destroy();
     }
 
-    const ctx = cognitiveChartRef.current.getContext('2d');
+    const ctx = distributionChartRef.current.getContext('2d');
     if (!ctx) return;
 
-    const latestData = biometricData[0];
-    const attention = latestData?.attentionLevel || 78;
-    const stress = latestData?.stressLevel || 25;
-    const cognitiveLoad = latestData?.cognitiveLoad || 34;
-    const workingMemory = 65; // Simulated
-    const processingSpeed = 82; // Simulated
-    const executiveFunction = 71; // Simulated
-
-    cognitiveChartInstance.current = new Chart(ctx, {
+    distributionChartInstance.current = new Chart(ctx, {
       type: 'doughnut',
       data: {
-        labels: ['Attention', 'Working Memory', 'Processing Speed', 'Executive Function'],
+        labels: ['Low Stress', 'Medium Stress', 'High Stress'],
         datasets: [{
-          data: [attention, workingMemory, processingSpeed, executiveFunction],
-          backgroundColor: [
-            '#6366F1',
-            '#8B5CF6',
-            '#10B981',
-            '#F59E0B'
+          data: [
+            biometricStats.aggregatedMetrics.stress.low,
+            biometricStats.aggregatedMetrics.stress.medium,
+            biometricStats.aggregatedMetrics.stress.high
           ],
-          borderWidth: 0
+          backgroundColor: ['#10b981', '#f59e0b', '#ef4444'],
+          borderWidth: 0,
         }]
       },
       options: {
@@ -138,158 +146,118 @@ export default function BiometricDashboard() {
         plugins: {
           legend: {
             position: 'bottom',
-            labels: {
-              padding: 20,
-              usePointStyle: true
-            }
+            labels: { color: '#9ca3af' }
           }
         }
       }
     });
+  }, [biometricStats]);
 
-    return () => {
-      if (cognitiveChartInstance.current) {
-        cognitiveChartInstance.current.destroy();
-        cognitiveChartInstance.current = null;
-      }
-    };
-  }, [biometricData]);
+  const getTrendIcon = (trend: 'increasing' | 'decreasing' | 'stable') => {
+    switch (trend) {
+      case 'increasing': return '↗️';
+      case 'decreasing': return '↘️';
+      case 'stable': return '→';
+    }
+  };
 
-  const latestData = biometricData[0];
-  const environmentalData = latestData?.environmentalData;
+  const getWellnessColor = (score: number) => {
+    if (score >= 80) return 'text-green-400';
+    if (score >= 60) return 'text-yellow-400';
+    return 'text-red-400';
+  };
+
+  if (!biometricStats) {
+    return (
+      <div className="space-y-6">
+        <div className="animate-pulse">
+          <div className="h-8 bg-gray-700 rounded w-1/3 mb-4"></div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="h-64 bg-gray-700 rounded-lg"></div>
+            <div className="h-64 bg-gray-700 rounded-lg"></div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      {/* Heart Rate Variability Chart */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-gray-900">Heart Rate Variability</h3>
-          <div className="flex space-x-2">
-            <button className="px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded hover:bg-gray-200">1H</button>
-            <button className="px-2 py-1 text-xs bg-primary-500 text-white rounded">6H</button>
-            <button className="px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded hover:bg-gray-200">24H</button>
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <h2 className="text-2xl font-bold text-white">Wellness Overview</h2>
+        <div className={`text-3xl font-bold ${getWellnessColor(biometricStats.wellnessScore)}`}>
+          {biometricStats.wellnessScore}/100
+        </div>
+      </div>
+
+      {/* Key Metrics */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="bg-gray-800 p-4 rounded-lg">
+          <div className="text-sm text-gray-400">Heart Rate</div>
+          <div className="text-xl font-semibold text-white flex items-center gap-2">
+            {biometricStats.aggregatedMetrics.heartRate.avg} bpm
+            <span className="text-sm">{getTrendIcon(biometricStats.aggregatedMetrics.heartRate.trend)}</span>
+          </div>
+          <div className="text-xs text-gray-500">
+            Range: {biometricStats.aggregatedMetrics.heartRate.min}-{biometricStats.aggregatedMetrics.heartRate.max}
           </div>
         </div>
-        <div className="h-64 relative">
-          <canvas ref={hrvChartRef} className="w-full h-full"></canvas>
+
+        <div className="bg-gray-800 p-4 rounded-lg">
+          <div className="text-sm text-gray-400">HRV</div>
+          <div className="text-xl font-semibold text-white flex items-center gap-2">
+            {biometricStats.aggregatedMetrics.hrv.avg} ms
+            <span className="text-sm">{getTrendIcon(biometricStats.aggregatedMetrics.hrv.trend)}</span>
+          </div>
+          <div className="text-xs text-gray-500">
+            Range: {biometricStats.aggregatedMetrics.hrv.min}-{biometricStats.aggregatedMetrics.hrv.max}
+          </div>
         </div>
-        <div className="mt-4 grid grid-cols-3 gap-4 text-center">
-          <div>
-            <p className="text-2xl font-bold text-green-600">{stats?.avgHRV || 41.5}</p>
-            <p className="text-sm text-gray-500">Avg HRV (ms)</p>
+
+        <div className="bg-gray-800 p-4 rounded-lg">
+          <div className="text-sm text-gray-400">High Attention</div>
+          <div className="text-xl font-semibold text-green-400">
+            {biometricStats.aggregatedMetrics.attention.high}%
           </div>
-          <div>
-            <p className="text-2xl font-bold text-blue-600">+12%</p>
-            <p className="text-sm text-gray-500">vs Yesterday</p>
+          <div className="text-xs text-gray-500">of readings</div>
+        </div>
+
+        <div className="bg-gray-800 p-4 rounded-lg">
+          <div className="text-sm text-gray-400">Total Samples</div>
+          <div className="text-xl font-semibold text-white">
+            {biometricStats.totalSamples}
           </div>
-          <div>
-            <p className="text-2xl font-bold text-purple-600">78</p>
-            <p className="text-sm text-gray-500">Recovery Score</p>
+          <div className="text-xs text-gray-500">data points</div>
+        </div>
+      </div>
+
+      {/* Charts */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="bg-gray-800 p-4 rounded-lg">
+          <h3 className="text-lg font-semibold text-white mb-4">Wellness Score Trend</h3>
+          <div className="h-64">
+            <canvas ref={wellnessChartRef}></canvas>
+          </div>
+        </div>
+
+        <div className="bg-gray-800 p-4 rounded-lg">
+          <h3 className="text-lg font-semibold text-white mb-4">Stress Distribution</h3>
+          <div className="h-64">
+            <canvas ref={distributionChartRef}></canvas>
           </div>
         </div>
       </div>
 
-      {/* Cognitive Performance Correlation */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-gray-900">Cognitive Performance</h3>
-          <div className="flex items-center text-sm text-gray-500">
-            <i className="fas fa-info-circle mr-1"></i>
-            Real-time correlation
-          </div>
-        </div>
-        <div className="h-64 relative">
-          <canvas ref={cognitiveChartRef} className="w-full h-full"></canvas>
-        </div>
-        <div className="mt-4 grid grid-cols-2 gap-4">
-          <div className="text-center">
-            <p className="text-2xl font-bold text-indigo-600">{Math.round(latestData?.attentionLevel || 78)}%</p>
-            <p className="text-sm text-gray-500">Attention Level</p>
-          </div>
-          <div className="text-center">
-            <p className="text-2xl font-bold text-orange-600">{Math.round(latestData?.cognitiveLoad || 34)}%</p>
-            <p className="text-sm text-gray-500">Cognitive Load</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Environmental Factors */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Environmental Factors</h3>
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center">
-              <i className="fas fa-volume-up text-blue-500 mr-3"></i>
-              <span className="text-sm text-gray-700">Sound Level</span>
+      {/* Recommendations */}
+      <div className="bg-gray-800 p-4 rounded-lg">
+        <h3 className="text-lg font-semibold text-white mb-3">Recommendations</h3>
+        <div className="space-y-2">
+          {biometricStats.recommendations.map((recommendation, index) => (
+            <div key={index} className="flex items-start gap-2">
+              <span className="text-blue-400 mt-1">•</span>
+              <span className="text-gray-300">{recommendation}</span>
             </div>
-            <div className="flex items-center">
-              <div className="w-24 h-2 bg-gray-200 rounded-full mr-3">
-                <div 
-                  className="h-2 bg-blue-500 rounded-full" 
-                  style={{ width: `${Math.min(100, (environmentalData?.soundLevel || 45) / 70 * 100)}%` }}
-                ></div>
-              </div>
-              <span className="text-sm font-semibold">{environmentalData?.soundLevel || 45} dB</span>
-            </div>
-          </div>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center">
-              <i className="fas fa-thermometer-half text-red-500 mr-3"></i>
-              <span className="text-sm text-gray-700">Temperature</span>
-            </div>
-            <div className="flex items-center">
-              <div className="w-24 h-2 bg-gray-200 rounded-full mr-3">
-                <div 
-                  className="h-2 bg-red-500 rounded-full" 
-                  style={{ width: `${Math.min(100, ((environmentalData?.temperature || 22.5) - 15) / 15 * 100)}%` }}
-                ></div>
-              </div>
-              <span className="text-sm font-semibold">{environmentalData?.temperature || 22.5}°C</span>
-            </div>
-          </div>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center">
-              <i className="fas fa-sun text-yellow-500 mr-3"></i>
-              <span className="text-sm text-gray-700">Light Level</span>
-            </div>
-            <div className="flex items-center">
-              <div className="w-24 h-2 bg-gray-200 rounded-full mr-3">
-                <div 
-                  className="h-2 bg-yellow-500 rounded-full" 
-                  style={{ width: `${Math.min(100, (environmentalData?.lightLevel || 520) / 1000 * 100)}%` }}
-                ></div>
-              </div>
-              <span className="text-sm font-semibold">{environmentalData?.lightLevel || 520} lux</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Training Data Statistics */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Training Data Collection</h3>
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-gray-600">Biometric Samples</span>
-            <span className="text-lg font-semibold text-blue-600">{stats?.totalSamples.toLocaleString() || '1,247,592'}</span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-gray-600">Prompt-Response Pairs</span>
-            <span className="text-lg font-semibold text-green-600">8,934</span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-gray-600">Cognitive Correlations</span>
-            <span className="text-lg font-semibold text-purple-600">15,672</span>
-          </div>
-          <div className="mt-4 pt-4 border-t border-gray-200">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm text-gray-600">Privacy Compliance</span>
-              <span className="text-sm font-semibold text-green-600">100%</span>
-            </div>
-            <div className="w-full h-2 bg-gray-200 rounded-full">
-              <div className="w-full h-2 bg-green-500 rounded-full"></div>
-            </div>
-          </div>
+          ))}
         </div>
       </div>
     </div>
