@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { storage } from "./storage";
-// import { openaiService } from "./services/openai"; // Removed AI integration
+
 import { biometricService } from "./services/biometric";
 import { vectorDatabase } from "./services/vector-database";
 import { analyticsService } from "./services/analytics";

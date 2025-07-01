@@ -49,7 +49,7 @@ export class WeaviateVectorDatabase {
         scheme: 'https',
         host: weaviateUrl,
         apiKey: new ApiKey(weaviateApiKey),
-        headers: { 'X-OpenAI-Api-Key': process.env.OPENAI_API_KEY || '' }
+        headers: {}
       });
 
       await this.initializeSchema();
@@ -71,11 +71,10 @@ export class WeaviateVectorDatabase {
       const classObj = {
         class: this.className,
         description: 'Prompt engineering documents with biometric context',
-        vectorizer: 'text2vec-openai',
+        vectorizer: 'text2vec-transformers',
         moduleConfig: {
-          'text2vec-openai': {
-            model: 'ada',
-            type: 'text'
+          'text2vec-transformers': {
+            poolingStrategy: 'masked_mean'
           }
         },
         properties: [
