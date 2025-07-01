@@ -118,7 +118,7 @@ export default function PromptInterface() {
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold text-gray-900">Prompt Engineering Interface</h3>
+        <h3 className="text-lg font-semibold text-gray-900">Biometric Analysis Interface</h3>
         <div className="flex space-x-2">
           <Button variant="outline" size="sm">
             <i className="fas fa-save mr-1"></i>Save Template

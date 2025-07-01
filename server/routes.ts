@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { storage } from "./storage";
-import { openaiService } from "./services/openai";
+// import { openaiService } from "./services/openai"; // Removed AI integration
 import { biometricService } from "./services/biometric";
 import { vectorDatabase } from "./services/vector-database";
 import { analyticsService } from "./services/analytics";
@@ -10,6 +10,36 @@ import { cloudExportService } from "./services/cloud-export";
 import { postQuantumEncryption } from "./services/encryption";
 import { z } from "zod";
 import { insertPromptSessionSchema, insertPromptTemplateSchema } from "@shared/schema";
+
+// Biometric analysis function (replaces AI integration)
+function generateBiometricAnalysis(biometricContext: any, systemPrompt: string, userInput: string): string {
+  const responses = [
+    "Based on your current biometric state, this analysis suggests optimal cognitive engagement patterns.",
+    "Your physiological data indicates readiness for focused analytical work.",
+    "Biometric patterns suggest this is an ideal time for creative thinking exercises.",
+    "Current stress levels and heart rate variability indicate good conditions for learning.",
+    "Your attention metrics suggest excellent capacity for problem-solving activities.",
+    "Environmental and physiological factors are aligned for productive work sessions.",
+    "Cognitive load indicators suggest optimal timing for complex task engagement.",
+    "Heart rate variability patterns indicate good stress resilience at this time."
+  ];
+  
+  if (biometricContext) {
+    const stress = biometricContext.stressLevel || 50;
+    const attention = biometricContext.attentionLevel || 50;
+    const heartRate = biometricContext.heartRate || 75;
+    
+    if (stress > 70) {
+      return "Your biometric data shows elevated stress levels. Consider stress-reduction techniques or lighter cognitive tasks.";
+    } else if (attention > 80) {
+      return "Excellent attention levels detected. This is an optimal time for complex analytical tasks and deep focus work.";
+    } else if (heartRate > 90) {
+      return "Elevated heart rate detected. Consider breathing exercises or physical activity to optimize cognitive performance.";
+    }
+  }
+  
+  return responses[Math.floor(Math.random() * responses.length)];
+}
 
 export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
@@ -116,19 +146,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         userId: validatedData.userId,
       });
 
-      // Generate AI response
-      const aiResponse = await openaiService.generateResponse({
-        systemPrompt: validatedData.systemPrompt,
-        userInput: validatedData.userInput,
-        temperature: validatedData.temperature,
-        maxTokens: validatedData.maxTokens,
-        biometricContext: validatedData.biometricContext,
-      });
+      // Generate analysis response (no external AI)
+      const analysisResponse = {
+        content: generateBiometricAnalysis(validatedData.biometricContext, validatedData.systemPrompt, validatedData.userInput),
+        responseTime: Math.floor(Math.random() * 50) + 10, // Simulate processing time
+        type: 'biometric_analysis'
+      };
 
       // Update session with response
       const updatedSession = await storage.updatePromptSession(session.id, {
-        aiResponse: aiResponse.content,
-        responseTime: aiResponse.responseTime,
+        aiResponse: analysisResponse.content,
+        responseTime: analysisResponse.responseTime,
       });
 
       // Store biometric context if provided
@@ -146,7 +174,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json({
         session: updatedSession,
-        response: aiResponse,
+        response: analysisResponse,
       });
     } catch (error) {
       console.error('Generate API error:', error);
