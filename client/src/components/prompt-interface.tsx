@@ -59,18 +59,18 @@ export default function PromptInterface() {
     },
     onSuccess: (data) => {
       toast({
-        title: "Response Generated",
-        description: `AI response generated in ${data.response.responseTime}ms`,
+        title: "Analysis Complete",
+        description: `Biometric analysis completed in ${data.response.responseTime}ms`,
       });
       queryClient.invalidateQueries({ queryKey: ['/api/sessions'] });
       
-      // Store the response for the AIResponse component
+      // Store the response for the Analysis component
       queryClient.setQueryData(['latest-response'], data);
     },
     onError: (error: any) => {
       toast({
-        title: "Generation Failed",
-        description: error.message || "Failed to generate AI response",
+        title: "Analysis Failed",
+        description: error.message || "Failed to complete biometric analysis",
         variant: "destructive",
       });
     },
@@ -89,7 +89,7 @@ export default function PromptInterface() {
     if (!systemPrompt.trim() || !userInput.trim()) {
       toast({
         title: "Missing Input",
-        description: "Please provide both system prompt and user input",
+        description: "Please provide both analysis template and user query",
         variant: "destructive",
       });
       return;
@@ -131,11 +131,11 @@ export default function PromptInterface() {
             {generateMutation.isPending ? (
               <>
                 <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-1"></div>
-                Generating...
+                Analyzing...
               </>
             ) : (
               <>
-                <i className="fas fa-magic mr-1"></i>Generate
+                <i className="fas fa-chart-line mr-1"></i>Analyze
               </>
             )}
           </Button>
