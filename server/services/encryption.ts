@@ -22,9 +22,12 @@ export interface EncryptedData {
 export class PostQuantumEncryption {
   private keyStore: Map<string, QuantumKeyPair> = new Map();
   private currentKeyId: string;
+  private transitEncryptionEnabled: boolean = true;
+  private restEncryptionEnabled: boolean = true;
 
   constructor() {
     this.currentKeyId = this.generateKeyPair();
+    console.log('Post-quantum encryption initialized for data at rest and in transit');
   }
 
   /**
@@ -198,6 +201,92 @@ export class PostQuantumEncryption {
    */
   exportKey(keyId: string): QuantumKeyPair | undefined {
     return this.keyStore.get(keyId);
+  }
+
+  /**
+   * Encrypt all user data (at rest)
+   */
+  async encryptUserData(userData: any): Promise<EncryptedData> {
+    if (!this.restEncryptionEnabled) {
+      throw new Error('Data at rest encryption is disabled');
+    }
+    return this.encrypt(userData);
+  }
+
+  /**
+   * Encrypt all biometric data (at rest)
+   */
+  async encryptBiometricData(biometricData: any): Promise<EncryptedData> {
+    if (!this.restEncryptionEnabled) {
+      throw new Error('Data at rest encryption is disabled');
+    }
+    return this.encrypt(biometricData);
+  }
+
+  /**
+   * Encrypt all prompt data (at rest)
+   */
+  async encryptPromptData(promptData: any): Promise<EncryptedData> {
+    if (!this.restEncryptionEnabled) {
+      throw new Error('Data at rest encryption is disabled');
+    }
+    return this.encrypt(promptData);
+  }
+
+  /**
+   * Encrypt all session data (at rest)
+   */
+  async encryptSessionData(sessionData: any): Promise<EncryptedData> {
+    if (!this.restEncryptionEnabled) {
+      throw new Error('Data at rest encryption is disabled');
+    }
+    return this.encrypt(sessionData);
+  }
+
+  /**
+   * Encrypt data for transmission (in transit)
+   */
+  async encryptForTransmission(data: any): Promise<EncryptedData> {
+    if (!this.transitEncryptionEnabled) {
+      throw new Error('Data in transit encryption is disabled');
+    }
+    return this.encrypt(data);
+  }
+
+  /**
+   * Decrypt data received from transmission (in transit)
+   */
+  async decryptFromTransmission(encryptedData: EncryptedData): Promise<any> {
+    if (!this.transitEncryptionEnabled) {
+      throw new Error('Data in transit encryption is disabled');
+    }
+    return this.decrypt(encryptedData);
+  }
+
+  /**
+   * Enable/disable encryption for data at rest
+   */
+  setRestEncryption(enabled: boolean): void {
+    this.restEncryptionEnabled = enabled;
+    console.log(`Data at rest encryption ${enabled ? 'enabled' : 'disabled'}`);
+  }
+
+  /**
+   * Enable/disable encryption for data in transit
+   */
+  setTransitEncryption(enabled: boolean): void {
+    this.transitEncryptionEnabled = enabled;
+    console.log(`Data in transit encryption ${enabled ? 'enabled' : 'disabled'}`);
+  }
+
+  /**
+   * Get encryption status
+   */
+  getEncryptionStatus(): { rest: boolean; transit: boolean } {
+    return {
+      rest: this.restEncryptionEnabled,
+      transit: this.transitEncryptionEnabled
+    };
   }
 }
 

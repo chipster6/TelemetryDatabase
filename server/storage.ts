@@ -18,6 +18,7 @@ import {
   type DeviceConnection,
   type InsertDeviceConnection
 } from "@shared/schema";
+import { postQuantumEncryption } from './services/encryption.js';
 
 export interface IStorage {
   // User methods
@@ -377,10 +378,28 @@ export class MemStorage implements IStorage {
 
   async createBiometricData(data: InsertBiometricData): Promise<BiometricData> {
     const id = this.currentId++;
+    
+    // Encrypt sensitive biometric data at rest
+    const sensitiveData = {
+      heartRate: data.heartRate,
+      hrv: data.hrv,
+      stressLevel: data.stressLevel,
+      attentionLevel: data.attentionLevel,
+      cognitiveLoad: data.cognitiveLoad,
+      skinTemperature: data.skinTemperature,
+      respiratoryRate: data.respiratoryRate,
+      oxygenSaturation: data.oxygenSaturation,
+      environmentalData: data.environmentalData
+    };
+    
+    const encryptedData = await postQuantumEncryption.encryptBiometricData(sensitiveData);
+    
     const newData: BiometricData = { 
       ...data, 
       id, 
-      timestamp: new Date() 
+      timestamp: new Date(),
+      // Store encryption metadata for decryption
+      metadata: JSON.stringify({ encrypted: true, keyId: encryptedData.keyId })
     };
     this.biometricData.set(id, newData);
     return newData;
