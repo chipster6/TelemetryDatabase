@@ -59,18 +59,18 @@ export default function PromptInterface() {
     },
     onSuccess: (data) => {
       toast({
-        title: "Analysis Complete",
-        description: `Biometric analysis completed in ${data.response.responseTime}ms`,
+        title: "Prompt Refined",
+        description: `Prompt engineering completed in ${data.response.responseTime}ms`,
       });
       queryClient.invalidateQueries({ queryKey: ['/api/sessions'] });
       
-      // Store the response for the Analysis component
+      // Store the response for display
       queryClient.setQueryData(['latest-response'], data);
     },
     onError: (error: any) => {
       toast({
-        title: "Analysis Failed",
-        description: error.message || "Failed to complete biometric analysis",
+        title: "Refinement Failed",
+        description: error.message || "Failed to refine prompt",
         variant: "destructive",
       });
     },
@@ -118,7 +118,7 @@ export default function PromptInterface() {
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold text-gray-900">Biometric Analysis Interface</h3>
+        <h3 className="text-lg font-semibold text-gray-900">Prompt Engineering & Refinement</h3>
         <div className="flex space-x-2">
           <Button variant="outline" size="sm">
             <i className="fas fa-save mr-1"></i>Save Template
@@ -131,11 +131,11 @@ export default function PromptInterface() {
             {generateMutation.isPending ? (
               <>
                 <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-1"></div>
-                Analyzing...
+                Refining...
               </>
             ) : (
               <>
-                <i className="fas fa-chart-line mr-1"></i>Analyze
+                <i className="fas fa-magic mr-1"></i>Refine Prompt
               </>
             )}
           </Button>
@@ -185,24 +185,24 @@ export default function PromptInterface() {
 
       {/* System Prompt */}
       <div className="mb-4">
-        <Label htmlFor="systemPrompt" className="text-sm font-medium text-gray-700 mb-2 block">System Prompt</Label>
+        <Label htmlFor="systemPrompt" className="text-sm font-medium text-gray-700 mb-2 block">System Prompt Template</Label>
         <Textarea
           id="systemPrompt"
           value={systemPrompt}
           onChange={(e) => setSystemPrompt(e.target.value)}
-          placeholder="You are an expert AI assistant specialized in..."
+          placeholder="You are an expert assistant specialized in..."
           className="h-32 resize-none"
         />
       </div>
 
       {/* User Input */}
       <div className="mb-6">
-        <Label htmlFor="userInput" className="text-sm font-medium text-gray-700 mb-2 block">User Input</Label>
+        <Label htmlFor="userInput" className="text-sm font-medium text-gray-700 mb-2 block">Your Raw Prompt</Label>
         <Textarea
           id="userInput"
           value={userInput}
           onChange={(e) => setUserInput(e.target.value)}
-          placeholder="Enter your prompt here..."
+          placeholder="Enter your basic prompt that needs refinement..."
           className="h-24 resize-none"
         />
       </div>

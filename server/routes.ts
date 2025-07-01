@@ -11,34 +11,58 @@ import { postQuantumEncryption } from "./services/encryption";
 import { z } from "zod";
 import { insertPromptSessionSchema, insertPromptTemplateSchema } from "@shared/schema";
 
-// Biometric analysis function (replaces AI integration)
-function generateBiometricAnalysis(biometricContext: any, systemPrompt: string, userInput: string): string {
-  const responses = [
-    "Based on your current biometric state, this analysis suggests optimal cognitive engagement patterns.",
-    "Your physiological data indicates readiness for focused analytical work.",
-    "Biometric patterns suggest this is an ideal time for creative thinking exercises.",
-    "Current stress levels and heart rate variability indicate good conditions for learning.",
-    "Your attention metrics suggest excellent capacity for problem-solving activities.",
-    "Environmental and physiological factors are aligned for productive work sessions.",
-    "Cognitive load indicators suggest optimal timing for complex task engagement.",
-    "Heart rate variability patterns indicate good stress resilience at this time."
-  ];
+// Prompt engineering and refinement function
+function generateRefinedPrompt(biometricContext: any, systemPrompt: string, userInput: string): string {
+  // Extract the role/purpose from system prompt
+  const role = systemPrompt.toLowerCase().includes('creative') ? 'creative assistant' :
+               systemPrompt.toLowerCase().includes('technical') ? 'technical expert' :
+               systemPrompt.toLowerCase().includes('business') ? 'business strategist' :
+               systemPrompt.toLowerCase().includes('research') ? 'research specialist' :
+               'expert assistant';
+
+  // Analyze user input for improvement opportunities
+  const inputWords = userInput.split(' ').length;
+  const hasContext = userInput.toLowerCase().includes('context') || userInput.toLowerCase().includes('background');
+  const hasConstraints = userInput.toLowerCase().includes('format') || userInput.toLowerCase().includes('length') || userInput.toLowerCase().includes('style');
+  const hasExamples = userInput.toLowerCase().includes('example') || userInput.toLowerCase().includes('like');
   
+  // Generate refined prompt with proper structure
+  let refinedPrompt = `You are a ${role} with deep expertise in your field. `;
+  
+  // Add biometric context if available for optimal cognitive state
   if (biometricContext) {
     const stress = biometricContext.stressLevel || 50;
     const attention = biometricContext.attentionLevel || 50;
-    const heartRate = biometricContext.heartRate || 75;
     
-    if (stress > 70) {
-      return "Your biometric data shows elevated stress levels. Consider stress-reduction techniques or lighter cognitive tasks.";
-    } else if (attention > 80) {
-      return "Excellent attention levels detected. This is an optimal time for complex analytical tasks and deep focus work.";
-    } else if (heartRate > 90) {
-      return "Elevated heart rate detected. Consider breathing exercises or physical activity to optimize cognitive performance.";
+    if (stress < 30 && attention > 70) {
+      refinedPrompt += "The user is in an optimal cognitive state for complex, detailed work. ";
+    } else if (stress > 60) {
+      refinedPrompt += "The user may be experiencing some stress, so provide clear, structured responses. ";
+    } else if (attention < 40) {
+      refinedPrompt += "The user's attention may be divided, so be concise and engaging. ";
     }
   }
   
-  return responses[Math.floor(Math.random() * responses.length)];
+  // Enhance the original prompt
+  refinedPrompt += `\n\nTask: ${userInput}\n\n`;
+  
+  // Add structure and best practices
+  if (!hasContext) {
+    refinedPrompt += "Please consider:\n- Relevant background context\n- Current industry standards\n- Best practices in this field\n\n";
+  }
+  
+  if (!hasConstraints) {
+    refinedPrompt += "Format requirements:\n- Provide clear, actionable insights\n- Use structured formatting when helpful\n- Include specific examples where appropriate\n\n";
+  }
+  
+  if (!hasExamples && inputWords < 10) {
+    refinedPrompt += "Please include:\n- Concrete examples to illustrate key points\n- Step-by-step guidance where applicable\n- Relevant use cases or scenarios\n\n";
+  }
+  
+  // Add closing instruction
+  refinedPrompt += "Ensure your response is comprehensive, practical, and directly addresses the user's needs with expert-level insight.";
+  
+  return refinedPrompt;
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -146,11 +170,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         userId: validatedData.userId,
       });
 
-      // Generate analysis response (no external AI)
+      // Generate refined prompt (no external AI)
       const analysisResponse = {
-        content: generateBiometricAnalysis(validatedData.biometricContext, validatedData.systemPrompt, validatedData.userInput),
+        content: generateRefinedPrompt(validatedData.biometricContext, validatedData.systemPrompt, validatedData.userInput),
         responseTime: Math.floor(Math.random() * 50) + 10, // Simulate processing time
-        type: 'biometric_analysis'
+        type: 'prompt_refinement'
       };
 
       // Update session with response
