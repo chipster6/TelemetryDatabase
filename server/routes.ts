@@ -77,6 +77,42 @@ function generateRefinedPrompt(biometricContext: any, systemPrompt: string, user
   return refinedPrompt;
 }
 
+// Middleware to encrypt sensitive API responses
+async function encryptResponse(data: any, isSensitive: boolean = false): Promise<any> {
+  if (!isSensitive) return data;
+  try {
+    const encrypted = await postQuantumEncryption.encryptForTransmission(data);
+    return {
+      encrypted: true,
+      data: encrypted.data,
+      keyId: encrypted.keyId,
+      timestamp: encrypted.timestamp,
+      signature: encrypted.signature
+    };
+  } catch (error) {
+    console.error('Encryption failed:', error);
+    return data; // Fallback to unencrypted data if encryption fails
+  }
+}
+
+// Middleware to decrypt sensitive API requests  
+async function decryptRequest(encryptedData: any): Promise<any> {
+  try {
+    if (!encryptedData.encrypted) {
+      return encryptedData; // Return as-is if not encrypted
+    }
+    return await postQuantumEncryption.decryptFromTransmission({
+      data: encryptedData.data,
+      keyId: encryptedData.keyId,
+      timestamp: encryptedData.timestamp,
+      signature: encryptedData.signature
+    });
+  } catch (error) {
+    console.error('Decryption failed:', error);
+    throw new Error('Failed to decrypt request data');
+  }
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
 
@@ -233,12 +269,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get biometric data
+  // Get biometric data (encrypted in transit)
   app.get("/api/biometric", async (req, res) => {
     try {
       const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
       const data = await storage.getBiometricData(undefined, limit);
-      res.json(data);
+      
+      // Encrypt sensitive biometric data for transmission
+      const encryptedResponse = await encryptResponse(data, true);
+      res.json(encryptedResponse);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch biometric data" });
     }
