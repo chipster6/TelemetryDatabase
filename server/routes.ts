@@ -164,6 +164,63 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // API Routes
 
+  // Authentication middleware
+  function requireAuth(req: any, res: any, next: any) {
+    if (req.session && req.session.userId) {
+      return next();
+    }
+    return res.status(401).json({ error: "Authentication required" });
+  }
+
+  // Login route
+  app.post("/api/login", async (req, res) => {
+    try {
+      const { username, password } = req.body;
+      
+      if (!username || !password) {
+        return res.status(400).json({ error: "Username and password required" });
+      }
+
+      const user = await storage.authenticateUser(username, password);
+      if (!user) {
+        return res.status(401).json({ error: "Invalid credentials" });
+      }
+
+      req.session.userId = user.id;
+      req.session.username = user.username;
+      
+      res.json({ 
+        message: "Login successful", 
+        user: { id: user.id, username: user.username } 
+      });
+    } catch (error) {
+      console.error('Login error:', error);
+      res.status(500).json({ error: "Login failed" });
+    }
+  });
+
+  // Logout route
+  app.post("/api/logout", (req, res) => {
+    req.session.destroy((err: any) => {
+      if (err) {
+        return res.status(500).json({ error: "Logout failed" });
+      }
+      res.json({ message: "Logout successful" });
+    });
+  });
+
+  // Check authentication status
+  app.get("/api/auth/status", (req, res) => {
+    if (req.session && req.session.userId) {
+      res.json({ 
+        authenticated: true,
+        user: { id: req.session.userId, username: req.session.username }
+      });
+    } else {
+      res.json({ authenticated: false });
+    }
+  });
+
   // Get prompt templates
   app.get("/api/templates", async (req, res) => {
     try {

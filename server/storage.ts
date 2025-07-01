@@ -305,6 +305,14 @@ export class MemStorage implements IStorage {
     return user;
   }
 
+  async authenticateUser(username: string, password: string): Promise<User | undefined> {
+    const user = await this.getUserByUsername(username);
+    if (!user) return undefined;
+    
+    const isValid = await bcrypt.compare(password, user.password);
+    return isValid ? user : undefined;
+  }
+
   async getPromptTemplates(userId?: number): Promise<PromptTemplate[]> {
     const templates = Array.from(this.promptTemplates.values());
     return userId ? templates.filter(t => t.userId === userId) : templates;
@@ -458,4 +466,132 @@ export class MemStorage implements IStorage {
   }
 }
 
-export const storage = new MemStorage();
+// Database Storage Implementation
+export class DatabaseStorage implements IStorage {
+  async getUser(id: number): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user || undefined;
+  }
+
+  async getUserByUsername(username: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.username, username));
+    return user || undefined;
+  }
+
+  async createUser(insertUser: InsertUser): Promise<User> {
+    const [user] = await db
+      .insert(users)
+      .values(insertUser)
+      .returning();
+    return user;
+  }
+
+  async authenticateUser(username: string, password: string): Promise<User | undefined> {
+    const user = await this.getUserByUsername(username);
+    if (!user) return undefined;
+    
+    const isValid = await bcrypt.compare(password, user.password);
+    return isValid ? user : undefined;
+  }
+
+  // Initialize the admin user from environment variables
+  async initializeAdminUser(): Promise<void> {
+    const username = process.env.PROMPT_USERNAME;
+    const password = process.env.PROMPT_PASSWORD;
+    
+    if (!username || !password) {
+      console.warn('PROMPT_USERNAME or PROMPT_PASSWORD not set');
+      return;
+    }
+
+    // Check if admin user already exists
+    const existingUser = await this.getUserByUsername(username);
+    if (existingUser) return;
+
+    // Hash the password and create the admin user
+    const hashedPassword = await bcrypt.hash(password, 10);
+    await this.createUser({
+      username,
+      password: hashedPassword,
+    });
+    
+    console.log(`Admin user '${username}' created successfully`);
+  }
+
+  // Placeholder implementations for other methods (keep using MemStorage for now)
+  async getPromptTemplates(userId?: number): Promise<PromptTemplate[]> {
+    return memStorage.getPromptTemplates(userId);
+  }
+
+  async getPromptTemplate(id: number): Promise<PromptTemplate | undefined> {
+    return memStorage.getPromptTemplate(id);
+  }
+
+  async createPromptTemplate(template: InsertPromptTemplate): Promise<PromptTemplate> {
+    return memStorage.createPromptTemplate(template);
+  }
+
+  async updatePromptTemplate(id: number, template: Partial<InsertPromptTemplate>): Promise<PromptTemplate | undefined> {
+    return memStorage.updatePromptTemplate(id, template);
+  }
+
+  async deletePromptTemplate(id: number): Promise<boolean> {
+    return memStorage.deletePromptTemplate(id);
+  }
+
+  async getPromptSessions(userId?: number, limit?: number): Promise<PromptSession[]> {
+    return memStorage.getPromptSessions(userId, limit);
+  }
+
+  async getPromptSession(id: number): Promise<PromptSession | undefined> {
+    return memStorage.getPromptSession(id);
+  }
+
+  async createPromptSession(session: InsertPromptSession): Promise<PromptSession> {
+    return memStorage.createPromptSession(session);
+  }
+
+  async updatePromptSession(id: number, session: Partial<PromptSession>): Promise<PromptSession | undefined> {
+    return memStorage.updatePromptSession(id, session);
+  }
+
+  async getBiometricData(sessionId?: number, limit?: number): Promise<BiometricData[]> {
+    return memStorage.getBiometricData(sessionId, limit);
+  }
+
+  async createBiometricData(data: InsertBiometricData): Promise<BiometricData> {
+    return memStorage.createBiometricData(data);
+  }
+
+  async getLatestBiometricData(userId?: number): Promise<BiometricData | undefined> {
+    return memStorage.getLatestBiometricData(userId);
+  }
+
+  async getCognitiveCorrelations(sessionId?: number): Promise<CognitiveCorrelation[]> {
+    return memStorage.getCognitiveCorrelations(sessionId);
+  }
+
+  async createCognitiveCorrelation(correlation: InsertCognitiveCorrelation): Promise<CognitiveCorrelation> {
+    return memStorage.createCognitiveCorrelation(correlation);
+  }
+
+  async getDeviceConnections(userId?: number): Promise<DeviceConnection[]> {
+    return memStorage.getDeviceConnections(userId);
+  }
+
+  async updateDeviceConnection(id: number, connection: Partial<DeviceConnection>): Promise<DeviceConnection | undefined> {
+    return memStorage.updateDeviceConnection(id, connection);
+  }
+
+  async createDeviceConnection(connection: InsertDeviceConnection): Promise<DeviceConnection> {
+    return memStorage.createDeviceConnection(connection);
+  }
+}
+
+const memStorage = new MemStorage();
+const dbStorage = new DatabaseStorage();
+
+// Initialize admin user
+dbStorage.initializeAdminUser().catch(console.error);
+
+export const storage = dbStorage;
