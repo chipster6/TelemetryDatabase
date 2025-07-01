@@ -4,6 +4,7 @@ import PromptInterface from "@/components/prompt-interface";
 import PromptRefinement from "@/components/ai-response";
 import BiometricPanel from "@/components/biometric-panel";
 import BiometricDashboard from "@/components/biometric-dashboard";
+import { WeaviateStatus } from "@/components/weaviate-status";
 import { useBiometric } from "@/hooks/use-biometric";
 import { useWebSocket } from "@/hooks/use-websocket";
 
@@ -68,6 +69,7 @@ export default function Dashboard() {
               </div>
               <div className="space-y-4">
                 <BiometricPanel currentBiometrics={currentBiometrics} />
+                <WeaviateStatus />
               </div>
             </div>
 

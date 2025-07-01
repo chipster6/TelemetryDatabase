@@ -50,19 +50,28 @@ export class WeaviateVectorDatabase {
     }
 
     try {
-      // Parse Weaviate URL to extract scheme and host
-      const url = new URL(weaviateUrl);
-      const scheme = url.protocol.replace(':', '');
-      const host = url.host;
+      // Parse Weaviate URL - handle both full URLs and bare hostnames
+      let scheme: 'http' | 'https' = 'https';
+      let host: string;
+
+      if (weaviateUrl.startsWith('http://') || weaviateUrl.startsWith('https://')) {
+        const url = new URL(weaviateUrl);
+        scheme = url.protocol.replace(':', '') as 'http' | 'https';
+        host = url.host;
+      } else {
+        // Bare hostname (typical for Weaviate Cloud)
+        host = weaviateUrl;
+        scheme = 'https'; // Default to HTTPS for cloud instances
+      }
 
       console.log(`Connecting to Weaviate at ${scheme}://${host}`);
 
       this.client = weaviate.client({
-        scheme: scheme as 'http' | 'https',
+        scheme: scheme,
         host: host,
         apiKey: new ApiKey(weaviateApiKey),
         headers: {
-          'X-OpenAI-Api-Key': '', // Remove any OpenAI dependencies
+          'Content-Type': 'application/json',
         }
       });
 
