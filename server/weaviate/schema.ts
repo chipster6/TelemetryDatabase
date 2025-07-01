@@ -7,7 +7,6 @@ export interface WeaviateClassDefinition {
   class: string;
   description: string;
   vectorizer: string;
-  moduleConfig?: any;
   properties: WeaviateProperty[];
 }
 
@@ -15,9 +14,39 @@ export interface WeaviateProperty {
   name: string;
   dataType: string[];
   description: string;
-  moduleConfig?: any;
   indexFilterable?: boolean;
-  indexSearchable?: boolean;
+}
+
+// Define schema for Weaviate
+export const weaviateSchema: WeaviateClassDefinition[] = [
+  // NexisConversation class definition
+  {
+    class: "NexisConversation",
+    description: "Store all conversation data with biometric context",
+    vectorizer: "text2vec-transformers",
+    properties: [
+      { name: "userMessage", dataType: ["text"], description: "User message" },
+      { name: "aiResponse", dataType: ["text"], description: "AI response" },
+      { name: "biometricSnapshot", dataType: ["object"], description: "Complete biometric snapshot" },
+      { name: "effectivenessScore", dataType: ["number"], description: "Effectiveness score (0-1)" },
+      { name: "timestamp", dataType: ["date"], description: "Timestamp" },
+      { name: "conversationId", dataType: ["string"], description: "Conversation ID" },
+      { name: "vectorEmbeddings", dataType: ["number[]"], description: "Vector embeddings for semantic search" }
+    ]
+  },
+  // Additional classes (NexisMemoryNode, NexisBiometricPattern, NexisPromptTemplate)
+];
+
+export async function initializeWeaviateSchema(weaviateClient: any): Promise<void> {
+  console.log('Initializing Weaviate schema...');
+  const existingClasses = (await weaviateClient.schema.getter().do()).classes.map((cls: any) => cls.class);
+
+  for (const classDef of weaviateSchema) {
+    if (!existingClasses.includes(classDef.class)) {
+      await weaviateClient.schema.classCreator().withClass(classDef).do();
+      console.log(`Created Weaviate class: ${classDef.class}`);
+    }
+  }
 }
 
 /**
@@ -211,7 +240,7 @@ export const nexisWeaviateSchema: WeaviateClassDefinition[] = [
 /**
  * Initialize Weaviate schema
  */
-export async function initializeWeaviateSchema(weaviateClient: any): Promise<void> {
+export async function initializeWeaviateSchema2(weaviateClient: any): Promise<void> {
   console.log('Initializing comprehensive Weaviate schema for Nexis platform...');
   
   try {
@@ -299,6 +328,6 @@ export async function getSchemaStats(weaviateClient: any): Promise<any> {
 
 export default {
   nexisWeaviateSchema,
-  initializeWeaviateSchema,
+  initializeWeaviateSchema: initializeWeaviateSchema2,
   getSchemaStats
 };
