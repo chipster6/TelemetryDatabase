@@ -44,7 +44,8 @@ export class WeaviateVectorDatabase {
     const weaviateApiKey = process.env.WEAVIATE_API_KEY;
 
     if (!weaviateUrl || !weaviateApiKey) {
-      console.warn('Weaviate credentials not found. Using fallback mode.');
+      console.log('Weaviate credentials not found. Using in-memory fallback mode.');
+      this.initializeFallbackMode();
       return;
     }
 
@@ -61,10 +62,20 @@ export class WeaviateVectorDatabase {
       console.log('Weaviate client initialized successfully');
     } catch (error) {
       console.error('Failed to initialize Weaviate client:', error);
+      console.log('Falling back to in-memory vector storage');
+      this.initializeFallbackMode();
     }
   }
 
+  private initializeFallbackMode() {
+    this.initializeShard(this.currentShard);
+    this.isInitialized = true;
+    console.log('Vector database initialized in fallback mode');
+  }
+
   private async initializeSchema() {
+    if (!this.client) return;
+    
     const schemaExists = await this.client.schema
       .classGetter()
       .withClassName(this.className)
@@ -115,7 +126,7 @@ export class WeaviateVectorDatabase {
         ]
       };
 
-      await this.client.schema.classCreator().withClass(classObj).do();
+      await this.client!.schema.classCreator().withClass(classObj).do();
       console.log(`Created Weaviate class: ${this.className}`);
     }
   }
@@ -129,9 +140,9 @@ export class WeaviateVectorDatabase {
     
     words.forEach(word => {
       if (!this.searchIndex.has(word)) {
-        this.searchIndex.set(word, new Set());
+        this.searchIndex.set(word, []);
       }
-      this.searchIndex.get(word)!.add(document.id);
+      this.searchIndex.get(word)!.push(document);
     });
   }
 
@@ -181,7 +192,7 @@ export class WeaviateVectorDatabase {
       };
 
       // Store in Weaviate
-      await this.client.data
+      await this.client!.data
         .creator()
         .withClassName(this.className)
         .withId(documentId)
@@ -216,9 +227,9 @@ export class WeaviateVectorDatabase {
 
       // Find documents matching search terms
       searchTerms.forEach(term => {
-        const matchingIds = this.searchIndex.get(term);
-        if (matchingIds) {
-          Array.from(matchingIds).forEach(id => candidateIds.add(id));
+        const matchingDocs = this.searchIndex.get(term);
+        if (matchingDocs) {
+          matchingDocs.forEach(doc => candidateIds.add(doc.id));
         }
       });
 
@@ -336,7 +347,7 @@ export class WeaviateVectorDatabase {
   private async exportShardData(shardId: string): Promise<VectorDocument[]> {
     const shardDocs: VectorDocument[] = [];
     
-    for (const document of this.documents.values()) {
+    for (const document of Array.from(this.documents.values())) {
       // For simplicity, include all documents (in production, would filter by shard metadata)
       shardDocs.push(document);
     }
