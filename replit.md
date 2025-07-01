@@ -2,7 +2,7 @@
 
 ## Overview
 
-This is a full-stack web application that combines AI prompt engineering with real-time biometric data collection and analysis. The platform allows users to create, manage, and execute AI prompts while monitoring physiological responses to optimize cognitive performance and AI interaction quality.
+This is a full-stack web application focused on prompt engineering best practices with real-time biometric data collection and analysis. The platform allows users to create, manage, and refine prompts using proven prompt engineering techniques while monitoring physiological responses for wellness tracking.
 
 ## System Architecture
 
@@ -21,7 +21,7 @@ This is a full-stack web application that combines AI prompt engineering with re
 - **Database**: PostgreSQL with Drizzle ORM
 - **Database Provider**: Neon Database (@neondatabase/serverless)
 - **WebSocket**: ws library for real-time biometric streaming
-- **AI Integration**: OpenAI API (GPT-4o model)
+
 
 ### Database Schema
 - **Users**: User authentication and management
@@ -39,11 +39,11 @@ This is a full-stack web application that combines AI prompt engineering with re
 - **Device Integration**: Supports Bluetooth devices, HealthKit, and simulation mode
 - **Data Processing**: On-device processing with privacy-first approach
 
-### 2. AI Prompt Engineering
+### 2. Prompt Engineering Tools
 - **Template System**: Reusable prompt templates with categories
-- **Dynamic Adaptation**: AI prompts adapt based on real-time biometric context
-- **Response Analysis**: Tracks response time and cognitive complexity
-- **Performance Optimization**: Correlates biometric state with AI interaction quality
+- **Prompt Refinement**: Automatic enhancement using prompt engineering best practices
+- **Structure Analysis**: Analyzes and improves prompt structure and clarity
+- **Best Practice Application**: Applies proven prompt engineering techniques
 
 ### 3. Real-time Dashboard
 - **Live Biometric Display**: Current physiological state visualization
@@ -60,8 +60,8 @@ This is a full-stack web application that combines AI prompt engineering with re
 ## Data Flow
 
 1. **Biometric Collection**: Devices → WebSocket → Real-time Processing → Database
-2. **AI Interaction**: User Input → Biometric Context → OpenAI API → Response Analysis
-3. **Correlation Analysis**: Biometric + AI Performance → Machine Learning → Optimization
+2. **Prompt Refinement**: User Input → Prompt Engineering Analysis → Enhanced Prompt Output
+3. **Wellness Analysis**: Biometric Data → Anonymized Statistics → Health Insights
 4. **Real-time Updates**: Database Changes → WebSocket → Frontend Updates
 
 ## External Dependencies
@@ -69,7 +69,7 @@ This is a full-stack web application that combines AI prompt engineering with re
 ### Core Dependencies
 - **@neondatabase/serverless**: PostgreSQL database connection
 - **drizzle-orm**: Type-safe database ORM
-- **openai**: Official OpenAI API client
+
 - **@tanstack/react-query**: Server state management
 - **ws**: WebSocket server implementation
 
@@ -97,12 +97,12 @@ This is a full-stack web application that combines AI prompt engineering with re
   - Backend: `esbuild` → optimized Node.js bundle
 - **Database**: PostgreSQL via Neon Database
 - **Deployment**: Single-process deployment with static file serving
-- **Environment Variables**: OpenAI API key, Database URL required
+- **Environment Variables**: Database URL required
 
 ### Configuration
 - **Frontend Config**: Vite with React, TypeScript, and Tailwind
 - **Database Config**: Drizzle with PostgreSQL dialect
-- **API Integration**: OpenAI GPT-4o model for AI responses
+- **Prompt Processing**: Built-in prompt engineering and refinement system
 
 ## Changelog
 
@@ -113,6 +113,7 @@ Changelog:
 - June 29, 2025. Implemented comprehensive vector database architecture with Weaviate, post-quantum encryption, sharded storage, semantic search, telemetry analytics, daily compression, and cloud export capabilities. All advanced features operational.
 - July 1, 2025. Major architectural change: Removed biometric-aware prompt refinement feature per user feedback. The system now focuses purely on prompt engineering best practices rather than adapting prompts based on physiological state. Biometric monitoring remains for general wellness tracking only.
 - July 1, 2025. Implemented comprehensive post-quantum encryption for all data at rest and in transit. All sensitive data (biometric readings, user information, prompt sessions) is encrypted using post-quantum resistant algorithms before storage and transmission. Replaced simulated Weaviate vector database with real Weaviate Cloud integration using TypeScript client.
+- July 1, 2025. Removed all OpenAI API integrations per user request. The platform now focuses on prompt engineering best practices using built-in algorithms rather than external AI services. Biometric monitoring remains for wellness tracking, and prompt refinement uses proven prompt engineering techniques.
 ```
 
 ## User Preferences
