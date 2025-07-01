@@ -128,6 +128,10 @@ export type CognitiveCorrelation = typeof cognitiveCorrelations.$inferSelect;
 export type InsertCognitiveCorrelation = z.infer<typeof insertCognitiveCorrelationSchema>;
 export type DeviceConnection = typeof deviceConnections.$inferSelect;
 export type InsertDeviceConnection = z.infer<typeof insertDeviceConnectionSchema>;
+export type WebauthnCredential = typeof webauthnCredentials.$inferSelect;
+export type InsertWebauthnCredential = z.infer<typeof insertWebauthnCredentialSchema>;
+export type WebauthnChallenge = typeof webauthnChallenges.$inferSelect;
+export type InsertWebauthnChallenge = z.infer<typeof insertWebauthnChallengeSchema>;
 
 // Vector Database Types
 export interface VectorDocument {
