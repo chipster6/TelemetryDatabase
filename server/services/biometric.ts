@@ -206,12 +206,15 @@ export class BiometricService {
     const data = await storage.getBiometricData(undefined, limit);
     this.dataCache.set(cacheKey, { data, timestamp: Date.now() });
     
+    // Clean up expired cache entries
+    this.clearExpiredCache();
+    
     return data;
   }
 
   private clearExpiredCache(): void {
     const now = Date.now();
-    for (const [key, value] of this.dataCache.entries()) {
+    for (const [key, value] of Array.from(this.dataCache.entries())) {
       if (now - value.timestamp > this.cacheTimeout) {
         this.dataCache.delete(key);
       }

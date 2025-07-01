@@ -20,6 +20,7 @@ import { anonymizationService } from "./services/anonymization";
 import { z } from "zod";
 import { insertPromptSessionSchema, insertPromptTemplateSchema } from "@shared/schema";
 
+
 // Prompt engineering and refinement function
 function generateRefinedPrompt(biometricContext: any, systemPrompt: string, userInput: string): string {
   // Extract the role/purpose from system prompt
@@ -124,6 +125,10 @@ async function decryptRequest(encryptedData: any): Promise<any> {
 
 export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
+
+  // Rate limiting for API endpoints
+  const { RateLimiter, PerformanceMonitor } = await import("./utils/performance");
+  const apiLimiter = new RateLimiter(100, 60000); // 100 requests per minute
 
   // WebSocket server for real-time biometric data
   const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
@@ -257,6 +262,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Generate AI response
   app.post("/api/generate", async (req, res) => {
     try {
+      // Rate limiting
+      if (!(await apiLimiter.checkLimit())) {
+        return res.status(429).json({ error: "Too many requests" });
+      }
+      
+      PerformanceMonitor.startTimer('prompt_generation');
       const schema = insertPromptSessionSchema.extend({
         biometricContext: z.object({
           heartRate: z.number().optional(),
@@ -310,9 +321,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }, session.id);
       }
 
+      const responseTime = PerformanceMonitor.endTimer('prompt_generation');
+      
       res.json({
         session: updatedSession,
-        response: analysisResponse,
+        response: { ...analysisResponse, responseTime },
       });
     } catch (error) {
       console.error('Generate API error:', error);
