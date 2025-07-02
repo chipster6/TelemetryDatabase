@@ -121,7 +121,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
               </div>
               <p className="text-xs text-gray-500 flex items-center gap-1">
                 <Shield className="h-3 w-3" />
-                Zero-visibility password input - no characters shown while typing. Click eye to reveal.
+                Secure password input with visibility toggle
               </p>
             </div>
             <Button
