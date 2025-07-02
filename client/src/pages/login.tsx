@@ -17,15 +17,6 @@ export default function Login({ onLoginSuccess }: LoginProps) {
   const [showPassword, setShowPassword] = useState(false);
   const { toast } = useToast();
   const { login, isLoginPending } = useAuth();
-  const { getSecureInputProps } = useSecureInput();
-  const formRef = useRef<HTMLFormElement>(null);
-
-  // Clear password from memory when component unmounts
-  useEffect(() => {
-    return () => {
-      setPassword("");
-    };
-  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -64,13 +55,8 @@ export default function Login({ onLoginSuccess }: LoginProps) {
     }
   };
 
-  // Secure password change handler
-  const handlePasswordChange = (value: string) => {
-    setPassword(value);
-  };
-
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 px-4">
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 py-12 px-4 sm:px-6 lg:px-8">
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1">
           <CardTitle className="text-2xl font-bold text-center">
@@ -86,13 +72,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
           </div>
         </CardHeader>
         <CardContent>
-          <form 
-            ref={formRef}
-            onSubmit={handleLogin} 
-            className="space-y-4"
-            autoComplete="off"
-            spellCheck="false"
-          >
+          <form onSubmit={handleLogin} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="username">Username</Label>
               <div className="relative">
@@ -105,7 +85,6 @@ export default function Login({ onLoginSuccess }: LoginProps) {
                   className="pl-10"
                   placeholder="Enter your username"
                   autoComplete="username"
-                  spellCheck="false"
                   required
                 />
               </div>
@@ -113,7 +92,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
             <div className="space-y-2">
               <Label htmlFor="password">Password</Label>
               <div className="relative">
-                <Lock className="absolute left-3 top-3 h-4 w-4 text-gray-400 z-10" />
+                <Lock className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
                 <Input
                   id="password"
                   type={showPassword ? "text" : "password"}
@@ -127,7 +106,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 hover:text-gray-600 focus:outline-none z-20"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 hover:text-gray-600 focus:outline-none"
                   tabIndex={-1}
                 >
                   {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
