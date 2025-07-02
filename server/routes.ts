@@ -905,6 +905,76 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Rollback endpoints (Prompt 12)
+  app.post("/api/migration/rollback-to-postgres", requireAuth, async (req, res) => {
+    try {
+      const { rollbackToPostgreSQL } = await import('../migrations/rollback-to-postgres.js');
+      const { dryRun = false, batchSize = 50, preserveWeaviateData = true } = req.body;
+      
+      const stats = await rollbackToPostgreSQL({ dryRun, batchSize, preserveWeaviateData });
+      res.json({ success: true, stats });
+    } catch (error) {
+      console.error('Rollback failed:', error);
+      res.status(500).json({ error: "Rollback failed" });
+    }
+  });
+
+  // Emergency rollback endpoint
+  app.post("/api/migration/emergency-rollback", requireAuth, async (req, res) => {
+    try {
+      const { triggerRollback } = await import('../migrations/rollback-to-postgres.js');
+      const { preserveWeaviate = true } = req.body;
+      
+      const stats = await triggerRollback(preserveWeaviate);
+      res.json({ success: true, stats, message: "Emergency rollback completed" });
+    } catch (error) {
+      console.error('Emergency rollback failed:', error);
+      res.status(500).json({ error: "Emergency rollback failed" });
+    }
+  });
+
+  // Dual-write management endpoints
+  app.post("/api/migration/dual-write/enable", requireAuth, async (req, res) => {
+    try {
+      const { dualWriteManager } = await import('../migrations/rollback-to-postgres.js');
+      dualWriteManager.enable();
+      res.json({ success: true, message: "Dual-write mode enabled" });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to enable dual-write mode" });
+    }
+  });
+
+  app.post("/api/migration/dual-write/disable", requireAuth, async (req, res) => {
+    try {
+      const { dualWriteManager } = await import('../migrations/rollback-to-postgres.js');
+      dualWriteManager.disable();
+      res.json({ success: true, message: "Dual-write mode disabled" });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to disable dual-write mode" });
+    }
+  });
+
+  app.get("/api/migration/dual-write/status", requireAuth, async (req, res) => {
+    try {
+      const { dualWriteManager } = await import('../migrations/rollback-to-postgres.js');
+      const stats = dualWriteManager.getStats();
+      const enabled = dualWriteManager.isEnabled();
+      res.json({ enabled, stats });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get dual-write status" });
+    }
+  });
+
+  app.post("/api/migration/dual-write/verify", requireAuth, async (req, res) => {
+    try {
+      const { dualWriteManager } = await import('../migrations/rollback-to-postgres.js');
+      const stats = await dualWriteManager.verifyConsistency();
+      res.json({ success: true, stats });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to verify consistency" });
+    }
+  });
+
   // Training Export endpoints
   app.post("/api/training-export/start", requireAuth, async (req, res) => {
     try {
