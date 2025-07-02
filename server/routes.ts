@@ -395,8 +395,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         effectiveness: conv.effectivenessScore
       }));
 
+      // Convert to PostgreSQL format for compatibility with anonymization service
+      const legacyFormat = biometricData.map(item => ({
+        id: parseInt(item.id) || 0,
+        sessionId: null,
+        heartRate: item.heartRate || null,
+        hrv: item.hrv || null,
+        stressLevel: item.stressLevel || null,
+        attentionLevel: item.attentionLevel || null,
+        cognitiveLoad: item.cognitiveLoad || null,
+        skinTemperature: null,
+        respiratoryRate: null,
+        oxygenSaturation: null,
+        environmentalData: null,
+        deviceSource: 'weaviate',
+        timestamp: item.timestamp
+      }));
+      
       // Generate anonymized statistics for privacy
-      const anonymizedStats = anonymizationService.generateAnonymizedStats(biometricData);
+      const anonymizedStats = anonymizationService.generateAnonymizedStats(legacyFormat);
       res.json({
         ...anonymizedStats,
         source: 'weaviate_primary',
@@ -407,7 +424,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Fallback to PostgreSQL for compatibility
       try {
-        const rawData = await storage.getBiometricData(undefined, limit);
+        const rawData = await storage.getBiometricData(undefined, req.query.limit ? parseInt(req.query.limit as string) : 50);
         const anonymizedStats = anonymizationService.generateAnonymizedStats(rawData);
         res.json({ ...anonymizedStats, source: 'postgresql_fallback' });
       } catch (fallbackError) {
@@ -458,6 +475,90 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Failed to get latest biometric data:', error);
       res.status(500).json({ error: "Failed to get latest biometric data" });
+    }
+  });
+
+  // Store biometric data - Weaviate-first approach
+  app.post("/api/biometric", async (req, res) => {
+    try {
+      const userId = req.session?.userId || 1;
+      
+      // Store as NexisConversation in Weaviate (primary)
+      const { weaviateService } = await import('./services/weaviate.service.js');
+      const conversationData = {
+        conversationId: `biometric_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        userId,
+        sessionId: `biometric_session_${Date.now()}`,
+        userMessage: 'Biometric data reading',
+        aiResponse: 'Biometric data processed and stored',
+        conversationType: 'biometric_reading',
+        effectivenessScore: 1.0,
+        responseStrategy: 'data_collection',
+        biometricState: {
+          ...req.body,
+          timestamp: Date.now()
+        },
+        neurodivergentMarkers: {
+          hyperfocusState: false,
+          contextSwitches: 0,
+          sensoryLoad: req.body.stressLevel || 0.5,
+          executiveFunction: Math.max(0, 1 - (req.body.stressLevel || 0.5)),
+          workingMemoryLoad: req.body.cognitiveLoad || 0.5,
+          attentionRegulation: req.body.attentionLevel || 0.6
+        },
+        environmentalContext: {
+          timeOfDay: getTimeOfDay(),
+          dayOfWeek: new Date().toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase(),
+          location: 'biometric_device',
+          soundLevel: 50,
+          lightLevel: 300,
+          temperature: 22,
+          humidity: 50,
+          airQuality: 80
+        },
+        conversationContext: 'Biometric data collection session',
+        timestamp: new Date().toISOString(),
+        learningMarkers: {
+          isBreakthrough: false,
+          cognitiveBreakthrough: false,
+          difficultyLevel: 1,
+          userSatisfaction: 1.0,
+          learningGoals: ['biometric_monitoring'],
+          skillAreas: ['health_tracking'],
+          knowledgeDomains: ['biometrics'],
+          adaptationNeeded: false,
+          followUpRequired: false
+        }
+      };
+
+      const conversationId = await weaviateService.storeConversation(conversationData);
+      
+      // Store minimal reference in PostgreSQL for fallback compatibility
+      try {
+        const legacyData = {
+          heartRate: req.body.heartRate,
+          hrv: req.body.hrv,
+          stressLevel: req.body.stressLevel,
+          attentionLevel: req.body.attentionLevel,
+          cognitiveLoad: req.body.cognitiveLoad,
+          deviceSource: 'weaviate_integration',
+          timestamp: new Date(),
+          sessionId: null
+        };
+        await storage.createBiometricData(legacyData);
+      } catch (pgError) {
+        console.warn('Failed to store legacy biometric data:', pgError);
+      }
+      
+      res.json({ 
+        id: conversationId,
+        success: true,
+        stored: 'weaviate_primary',
+        ...req.body 
+      });
+    } catch (error) {
+      console.error('Failed to store biometric data in Weaviate:', error);
+      res.status(500).json({ error: "Failed to store biometric data" });
     }
   });
 

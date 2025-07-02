@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Chart, registerables } from "chart.js";
+import { useWeaviateConversations, useBiometricConversations } from "@/hooks/use-weaviate-data";
 
 Chart.register(...registerables);
 
@@ -51,6 +52,16 @@ export default function BiometricDashboard() {
   const wellnessChartInstance = useRef<Chart | null>(null);
   const distributionChartInstance = useRef<Chart | null>(null);
 
+  // Fetch conversation history with biometric context from Weaviate
+  const { data: conversationHistory = [] } = useWeaviateConversations(50);
+  
+  // Fetch conversations similar to current biometric state
+  const { data: similarStateConversations = [] } = useBiometricConversations(
+    null, // currentBiometrics would come from props
+    10
+  );
+
+  // Fallback to legacy biometric data and time series
   const { data: biometricStats } = useQuery<AnonymizedBiometricStats>({
     queryKey: ['/api/biometric'],
     refetchInterval: 5000,
