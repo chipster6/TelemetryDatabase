@@ -31,6 +31,9 @@ export async function migratePostgresToWeaviate(options: {
   console.log('🚀 Starting PostgreSQL to Weaviate migration...');
 
   try {
+    // Initialize Weaviate service before migration
+    await weaviateService.initialize();
+    console.log('✓ Weaviate service initialized for migration');
     // Get all existing data
     const [promptSessions, biometricData] = await Promise.all([
       storage.getPromptSessions(),
