@@ -41,7 +41,9 @@ export default function Login({ onLoginSuccess }: LoginProps) {
     }
 
     try {
-      await login({ username: username.trim(), password });
+      console.log('Attempting login with username:', username.trim());
+      const result = await login({ username: username.trim(), password });
+      console.log('Login result:', result);
 
       // Clear sensitive data immediately after successful login
       setPassword("");
@@ -57,9 +59,10 @@ export default function Login({ onLoginSuccess }: LoginProps) {
       // Clear password on failed login for security
       setPassword("");
       
+      console.error('Login error:', error);
       toast({
         title: "Login failed",
-        description: "Invalid username or password",
+        description: error instanceof Error ? error.message : "Invalid username or password",
         variant: "destructive",
       });
     }
@@ -80,8 +83,10 @@ export default function Login({ onLoginSuccess }: LoginProps) {
           <CardDescription className="text-center">
             Enter your credentials to access the platform
           </CardDescription>
-          <div className="text-center text-sm text-gray-600 dark:text-gray-400 bg-blue-50 dark:bg-blue-900/20 p-2 rounded">
-            Use your configured username and password from Replit secrets
+          <div className="text-center text-sm text-gray-600 dark:text-gray-400 bg-blue-50 dark:bg-blue-900/20 p-3 rounded space-y-1">
+            <div className="font-medium">Login using your Replit secrets:</div>
+            <div><strong>Username:</strong> PROMPT_USERNAME secret</div>
+            <div><strong>Password:</strong> PROMPT_PASSWORD secret</div>
           </div>
         </CardHeader>
         <CardContent>
