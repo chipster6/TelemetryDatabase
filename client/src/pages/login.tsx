@@ -80,6 +80,9 @@ export default function Login({ onLoginSuccess }: LoginProps) {
           <CardDescription className="text-center">
             Enter your credentials to access the platform
           </CardDescription>
+          <div className="text-center text-sm text-gray-600 dark:text-gray-400 bg-blue-50 dark:bg-blue-900/20 p-2 rounded">
+            Use your configured username and password from Replit secrets
+          </div>
         </CardHeader>
         <CardContent>
           <form 
