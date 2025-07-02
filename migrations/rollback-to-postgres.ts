@@ -147,19 +147,8 @@ async function convertConversationToSession(conversation: any): Promise<InsertPr
       userId: conversation.userId,
       systemPrompt: `Restored from Weaviate conversation ${conversation.conversationId}`,
       userInput: conversation.userMessage,
-      aiResponse: conversation.aiResponse,
-      biometricContext: {
-        heartRate: conversation.heartRate,
-        hrv: conversation.hrv,
-        stressLevel: conversation.stressLevel,
-        attentionLevel: conversation.attentionLevel,
-        cognitiveLoad: conversation.cognitiveLoad,
-        flowState: conversation.flowState,
-        timestamp: conversation.timestamp
-      },
-      satisfactionRating: Math.round(conversation.effectivenessScore * 5), // Convert 0-1 to 1-5
-      refinementApplied: conversation.responseStrategy !== 'default',
-      timestamp: new Date(conversation.timestamp)
+      temperature: 0.7,
+      maxTokens: 1000
     };
 
     return sessionData;
@@ -194,8 +183,7 @@ async function convertConversationToBiometric(conversation: any): Promise<Insert
         temperature: conversation.temperature,
         timeOfDay: conversation.timeOfDay
       },
-      deviceSource: 'weaviate_rollback',
-      timestamp: new Date(conversation.timestamp)
+      deviceSource: 'weaviate_rollback'
     };
 
     return biometricData;
@@ -216,22 +204,12 @@ async function convertConversationToCorrelation(conversation: any): Promise<Inse
 
     const correlationData: InsertCognitiveCorrelation = {
       sessionId: null, // Will be linked after session creation
-      biometricState: {
-        heartRate: conversation.heartRate,
-        stressLevel: conversation.stressLevel,
-        cognitiveLoad: conversation.cognitiveLoad,
-        attentionLevel: conversation.attentionLevel
-      },
-      responseQuality: conversation.effectivenessScore,
-      userSatisfaction: conversation.userSatisfaction || conversation.effectivenessScore,
-      correlationStrength: conversation.effectivenessScore > 0.8 ? 'strong' : 
-                          conversation.effectivenessScore > 0.6 ? 'moderate' : 'weak',
-      insights: [
-        `Effectiveness: ${(conversation.effectivenessScore * 100).toFixed(1)}%`,
-        `Strategy: ${conversation.responseStrategy}`,
-        `Type: ${conversation.conversationType}`
-      ],
-      timestamp: new Date(conversation.timestamp)
+      attentionScore: conversation.attentionLevel,
+      stressScore: conversation.stressLevel,
+      cognitiveLoadScore: conversation.cognitiveLoad,
+      responseQualityScore: conversation.effectivenessScore,
+      circadianAlignment: 0.5, // Default value
+      promptComplexityScore: 0.5 // Default value
     };
 
     return correlationData;
