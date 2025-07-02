@@ -373,17 +373,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get anonymized biometric statistics
+  // Get biometric data - Weaviate-first approach
   app.get("/api/biometric", async (req, res) => {
     try {
       const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
-      const rawData = await storage.getBiometricData(undefined, limit);
       
-      // Generate anonymized statistics instead of raw data
-      const anonymizedStats = anonymizationService.generateAnonymizedStats(rawData);
-      res.json(anonymizedStats);
+      // Search Weaviate for biometric conversations instead of PostgreSQL
+      const { weaviateService } = await import('./services/weaviate.service.js');
+      const conversations = await weaviateService.searchConversations('biometric', limit);
+      
+      // Transform to legacy format for compatibility
+      const biometricData = conversations.map(conv => ({
+        id: conv.conversationId,
+        heartRate: conv.heartRate,
+        hrv: conv.hrv,
+        stressLevel: conv.stressLevel,
+        attentionLevel: conv.attentionLevel,
+        cognitiveLoad: conv.cognitiveLoad,
+        timestamp: new Date(conv.timestamp),
+        userId: conv.userId,
+        effectiveness: conv.effectivenessScore
+      }));
+
+      // Generate anonymized statistics for privacy
+      const anonymizedStats = anonymizationService.generateAnonymizedStats(biometricData);
+      res.json({
+        ...anonymizedStats,
+        source: 'weaviate_primary',
+        totalConversations: conversations.length
+      });
     } catch (error) {
-      res.status(500).json({ error: "Failed to fetch biometric statistics" });
+      console.error('Failed to get biometric data from Weaviate:', error);
+      
+      // Fallback to PostgreSQL for compatibility
+      try {
+        const rawData = await storage.getBiometricData(undefined, limit);
+        const anonymizedStats = anonymizationService.generateAnonymizedStats(rawData);
+        res.json({ ...anonymizedStats, source: 'postgresql_fallback' });
+      } catch (fallbackError) {
+        res.status(500).json({ error: "Failed to fetch biometric statistics" });
+      }
     }
   });
 
@@ -402,13 +431,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get latest biometric reading
+  // Get latest biometric reading - Weaviate-first approach
   app.get("/api/biometric/latest", async (req, res) => {
     try {
-      const latest = await storage.getLatestBiometricData();
-      res.json(latest);
+      // Get latest from Weaviate
+      const { weaviateService } = await import('./services/weaviate.service.js');
+      const conversations = await weaviateService.searchConversations('biometric', 1);
+      
+      if (conversations.length > 0) {
+        const latest = conversations[0];
+        res.json({
+          heartRate: latest.heartRate,
+          hrv: latest.hrv,
+          stressLevel: latest.stressLevel,
+          attentionLevel: latest.attentionLevel,
+          cognitiveLoad: latest.cognitiveLoad,
+          timestamp: new Date(latest.timestamp),
+          effectiveness: latest.effectivenessScore,
+          source: 'weaviate_primary'
+        });
+      } else {
+        // Fallback to PostgreSQL if no data in Weaviate
+        const latest = await storage.getLatestBiometricData();
+        res.json({ ...latest, source: 'postgresql_fallback' });
+      }
     } catch (error) {
-      res.status(500).json({ error: "Failed to fetch latest biometric data" });
+      console.error('Failed to get latest biometric data:', error);
+      res.status(500).json({ error: "Failed to get latest biometric data" });
     }
   });
 

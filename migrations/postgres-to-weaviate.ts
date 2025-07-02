@@ -112,9 +112,9 @@ async function convertSessionToConversation(
     conversationId: `migrated_${session.id}_${Date.now()}`,
     userId: session.userId || 1,
     sessionId: `migrated_session_${session.id}`,
-    userMessage: session.originalPrompt || 'Migrated conversation',
-    aiResponse: session.refinedPrompt || session.response || 'Migrated response',
-    conversationContext: `Original session from ${session.createdAt}`,
+    userMessage: session.userInput || 'Migrated conversation',
+    aiResponse: session.aiResponse || 'Migrated response',
+    conversationContext: `Original session from ${session.createdAt || new Date()}`,
     conversationType: 'migrated',
     effectivenessScore: 0.7,
     responseStrategy: 'adaptive_balanced',
@@ -148,7 +148,7 @@ async function convertSessionToConversation(
       adaptationNeeded: false,
       followUpRequired: false
     },
-    timestamp: session.createdAt.toISOString()
+    timestamp: (session.createdAt || new Date()).toISOString()
   };
 
   await weaviateService.storeConversation(conversationData);
@@ -175,7 +175,7 @@ function calculateAverageBiometrics(biometricData: BiometricData[]): any {
     stressLevel: acc.stressLevel + (data.stressLevel || 0.5),
     attentionLevel: acc.attentionLevel + (data.attentionLevel || 0.6),
     cognitiveLoad: acc.cognitiveLoad + (data.cognitiveLoad || 0.5),
-    flowState: acc.flowState + (data.flowState || 0.4)
+    flowState: acc.flowState + 0.4  // Default value since flowState doesn't exist in BiometricData
   }), {
     heartRate: 0, hrv: 0, stressLevel: 0, attentionLevel: 0, cognitiveLoad: 0, flowState: 0
   });
