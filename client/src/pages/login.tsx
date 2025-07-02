@@ -1,13 +1,11 @@
-import { useState, useEffect, useRef } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
-import { useSecureInput } from "@/hooks/useSecureInput";
-import { SecurePasswordInput } from "@/components/secure-password-input";
-import { Lock, User, Shield } from "lucide-react";
+import { Lock, User, Eye, EyeOff } from "lucide-react";
 
 interface LoginProps {
   onLoginSuccess: () => void;
@@ -16,6 +14,7 @@ interface LoginProps {
 export default function Login({ onLoginSuccess }: LoginProps) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const { toast } = useToast();
   const { login, isLoginPending } = useAuth();
   const { getSecureInputProps } = useSecureInput();
@@ -115,19 +114,25 @@ export default function Login({ onLoginSuccess }: LoginProps) {
               <Label htmlFor="password">Password</Label>
               <div className="relative">
                 <Lock className="absolute left-3 top-3 h-4 w-4 text-gray-400 z-10" />
-                <SecurePasswordInput
+                <Input
                   id="password"
+                  type={showPassword ? "text" : "password"}
                   value={password}
-                  onChange={handlePasswordChange}
+                  onChange={(e) => setPassword(e.target.value)}
                   className="pl-10 pr-10"
                   placeholder="Enter your password"
+                  autoComplete="current-password"
                   required
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 hover:text-gray-600 focus:outline-none z-20"
+                  tabIndex={-1}
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
               </div>
-              <p className="text-xs text-gray-500 flex items-center gap-1">
-                <Shield className="h-3 w-3" />
-                Secure password input with visibility toggle
-              </p>
             </div>
             <Button
               type="submit"
