@@ -41,9 +41,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
     }
 
     try {
-      console.log('Attempting login with username:', username.trim());
-      const result = await login({ username: username.trim(), password });
-      console.log('Login result:', result);
+      await login({ username: username.trim(), password });
 
       // Clear sensitive data immediately after successful login
       setPassword("");
@@ -59,7 +57,6 @@ export default function Login({ onLoginSuccess }: LoginProps) {
       // Clear password on failed login for security
       setPassword("");
       
-      console.error('Login error:', error);
       toast({
         title: "Login failed",
         description: error instanceof Error ? error.message : "Invalid username or password",
