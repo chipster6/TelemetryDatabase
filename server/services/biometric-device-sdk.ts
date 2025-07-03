@@ -646,17 +646,8 @@ export class BiometricDeviceSDK extends EventEmitter {
       const connectionData = {
         userId: 1, // Default user for now
         deviceType: deviceInfo.type,
-        deviceId: deviceInfo.id,
         deviceName: deviceInfo.name,
-        isConnected: device.isDeviceConnected(),
-        batteryLevel: deviceInfo.batteryLevel,
-        signalStrength: deviceInfo.signalStrength,
-        connectionMetadata: {
-          manufacturer: deviceInfo.manufacturer,
-          model: deviceInfo.model,
-          version: deviceInfo.version,
-          capabilities: deviceInfo.capabilities
-        }
+        connectionStatus: device.isDeviceConnected() ? 'connected' : 'disconnected'
       };
 
       await storage.createDeviceConnection(connectionData);
@@ -677,9 +668,10 @@ export class BiometricDeviceSDK extends EventEmitter {
         stressLevel: reading.stressLevel,
         attentionLevel: reading.attentionLevel,
         cognitiveLoad: reading.cognitiveLoad,
-        deviceId: reading.deviceId,
-        timestamp: new Date(reading.timestamp),
-        qualityScore: reading.confidence
+        skinTemperature: null,
+        respiratoryRate: null,
+        oxygenSaturation: null,
+        environmentalData: null
       };
 
       await storage.createBiometricData(biometricData);

@@ -1,0 +1,62 @@
+name = "biometric-telemetry"
+compatibility_date = "2024-01-15"
+compatibility_flags = ["nodejs_compat"]
+pages_build_output_dir = "dist/public"
+
+[env.production]
+name = "biometric-telemetry-prod"
+# Will deploy to: biometric-telemetry.pages.dev
+
+[env.preview]
+name = "biometric-telemetry-preview"
+
+# Environment variables for REAL CRYSTALS-Kyber and security
+[env.production.vars]
+NODE_ENV = "production"
+REAL_CRYSTALS_KYBER_ENABLED = "true"
+QUANTUM_RESISTANT_ENCRYPTION = "true"
+
+[env.preview.vars]
+NODE_ENV = "development"
+REAL_CRYSTALS_KYBER_ENABLED = "true"
+QUANTUM_RESISTANT_ENCRYPTION = "true"
+
+# Secure secrets (set via Wrangler CLI)
+# These will be encrypted by Cloudflare
+# Use: wrangler secret put <SECRET_NAME>
+#
+# Required secrets:
+# - SESSION_SECRET (random string for session security)
+# - WEAVIATE_URL (your Weaviate cluster URL)
+# - WEAVIATE_API_KEY (your Weaviate API key)
+# - PROMPT_USERNAME (admin username)
+# - PROMPT_PASSWORD (admin password)
+
+# D1 Database binding for biometric data storage
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "biometric-telemetry-prod"
+database_id = "" # Will be filled by Cloudflare CLI
+
+[[env.preview.d1_databases]]
+binding = "DB"
+database_name = "biometric-telemetry-preview"
+database_id = "" # Will be filled by Cloudflare CLI
+
+# KV for session storage and caching
+[[env.production.kv_namespaces]]
+binding = "SESSIONS"
+id = "" # Will be filled by Cloudflare CLI
+preview_id = ""
+
+[[env.preview.kv_namespaces]]
+binding = "SESSIONS"
+id = "" # Will be filled by Cloudflare CLI
+preview_id = ""
+
+# Analytics for monitoring CRYSTALS-Kyber usage
+[env.production.analytics_engine_datasets]
+binding = "SECURITY_ANALYTICS"
+
+[env.preview.analytics_engine_datasets]
+binding = "SECURITY_ANALYTICS"

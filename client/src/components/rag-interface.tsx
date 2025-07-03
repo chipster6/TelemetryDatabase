@@ -82,12 +82,12 @@ export default function RAGInterface() {
           responseStrategy: ragResponse.strategy,
           biometricState: currentBiometrics,
           neurodivergentMarkers: {
-            hyperfocusState: currentBiometrics.flowState > 0.8,
+            hyperfocusState: (currentBiometrics?.attentionLevel ?? 0) > 0.8,
             contextSwitches: 0,
-            sensoryLoad: currentBiometrics.arousal || 0.5,
-            executiveFunction: Math.max(0, 1 - currentBiometrics.stressLevel),
-            workingMemoryLoad: currentBiometrics.cognitiveLoad,
-            attentionRegulation: currentBiometrics.attentionLevel
+            sensoryLoad: (currentBiometrics?.stressLevel ?? 0.5),
+            executiveFunction: Math.max(0, 1 - (currentBiometrics?.stressLevel ?? 0.5)),
+            workingMemoryLoad: currentBiometrics?.cognitiveLoad ?? 0.5,
+            attentionRegulation: currentBiometrics?.attentionLevel ?? 0.6
           },
           environmentalContext: {
             timeOfDay: getTimeOfDay(),
@@ -101,7 +101,7 @@ export default function RAGInterface() {
           },
           learningMarkers: {
             isBreakthrough: ragResponse.confidence > 0.9,
-            cognitiveBreakthrough: currentBiometrics.flowState > 0.8,
+            cognitiveBreakthrough: (currentBiometrics?.attentionLevel ?? 0) > 0.8,
             difficultyLevel: Math.ceil(query.length / 50),
             userSatisfaction: ragResponse.confidence,
             learningGoals: ['ai_interaction'],
@@ -150,9 +150,9 @@ export default function RAGInterface() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-sm text-gray-600">
                 <Target className="h-3 w-3" />
-                <span>Cognitive Load: {(currentBiometrics.cognitiveLoad * 100).toFixed(0)}%</span>
+                <span>Cognitive Load: {((currentBiometrics?.cognitiveLoad ?? 0.5) * 100).toFixed(0)}%</span>
                 <span>•</span>
-                <span>Flow State: {(currentBiometrics.flowState * 100).toFixed(0)}%</span>
+                <span>Attention: {((currentBiometrics?.attentionLevel ?? 0.6) * 100).toFixed(0)}%</span>
               </div>
               
               <Button type="submit" disabled={loading || !query.trim()}>

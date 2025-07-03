@@ -112,10 +112,7 @@ export default function RegisterPage() {
                 id="password"
                 placeholder="Enter your password"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                {...getSecureInputProps()}
-                autoComplete="new-password"
-                minLength={8}
+                onChange={(value) => setPassword(value)}
                 required
               />
             </div>
@@ -126,10 +123,7 @@ export default function RegisterPage() {
                 id="confirmPassword"
                 placeholder="Confirm your password"
                 value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                {...getSecureInputProps()}
-                autoComplete="new-password"
-                minLength={8}
+                onChange={(value) => setConfirmPassword(value)}
                 required
               />
             </div>

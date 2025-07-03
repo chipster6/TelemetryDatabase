@@ -8,6 +8,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useSecureAuth } from "@/hooks/useSecureAuth";
 import { SecurePasswordInput } from "@/components/secure-password-input";
 import { Lock, User, Shield } from "lucide-react";
+import { Link } from "wouter";
 
 interface LoginProps {
   onLoginSuccess: () => void;

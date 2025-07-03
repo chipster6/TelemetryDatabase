@@ -6,10 +6,14 @@
   "scripts": {
     "dev": "NODE_ENV=development tsx server/index.ts",
     "build": "vite build && esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
+    "build:pages": "npm run build",
     "start": "NODE_ENV=production node dist/index.js",
     "check": "tsc",
     "test:migration": "tsx test/migration-test.ts",
-    "test:store-conversation": "tsx test/store-conversation-test.ts"
+    "test:store-conversation": "tsx test/store-conversation-test.ts",
+    "deploy": "wrangler pages deploy dist/public --project-name=biometric-telemetry",
+    "deploy:preview": "wrangler pages deploy dist/public --project-name=biometric-telemetry --env=preview",
+    "pages:dev": "wrangler pages dev dist/public --compatibility-date=2024-01-15 --compatibility-flags=nodejs_compat"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

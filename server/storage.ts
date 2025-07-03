@@ -391,7 +391,17 @@ export class MemStorage implements IStorage {
     const newData: BiometricData = { 
       ...data, 
       id, 
-      timestamp: new Date()
+      timestamp: new Date(),
+      sessionId: data.sessionId ?? null,
+      heartRate: data.heartRate ?? null,
+      hrv: data.hrv ?? null,
+      stressLevel: data.stressLevel ?? null,
+      attentionLevel: data.attentionLevel ?? null,
+      cognitiveLoad: data.cognitiveLoad ?? null,
+      skinTemperature: data.skinTemperature ?? null,
+      respiratoryRate: data.respiratoryRate ?? null,
+      oxygenSaturation: data.oxygenSaturation ?? null,
+      environmentalData: data.environmentalData ?? null
     };
     this.biometricData.set(id, newData);
     return newData;
