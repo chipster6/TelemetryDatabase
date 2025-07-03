@@ -149,6 +149,13 @@ class TrainingExportService {
   }
 
   /**
+   * Get all export jobs
+   */
+  getAllJobs(): ExportJob[] {
+    return Array.from(this.exportJobs.values());
+  }
+
+  /**
    * Process export job
    */
   private async processExport(jobId: string): Promise<void> {

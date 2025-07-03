@@ -1,11 +1,7 @@
-// Post-quantum encryption implementation using native crypto
-import * as crypto from 'crypto';
-import * as zlib from 'zlib';
-import { promisify } from 'util';
+// Post-quantum encryption implementation - Updated to use REAL CRYSTALS-Kyber
+import { realPostQuantumCrypto, type RealPQCEncryptedData } from './real-post-quantum-crypto.js';
 
-const gzip = promisify(zlib.gzip);
-const gunzip = promisify(zlib.gunzip);
-
+// Legacy interfaces for backward compatibility
 export interface QuantumKeyPair {
   publicKey: string;
   privateKey: string;
@@ -20,191 +16,94 @@ export interface EncryptedData {
 }
 
 export class PostQuantumEncryption {
-  private keyStore: Map<string, QuantumKeyPair> = new Map();
-  private currentKeyId: string;
   private transitEncryptionEnabled: boolean = true;
   private restEncryptionEnabled: boolean = true;
 
   constructor() {
-    this.currentKeyId = this.generateKeyPair();
-    console.log('Post-quantum encryption initialized for data at rest and in transit');
+    console.log('Post-quantum encryption wrapper initialized - delegating to REAL CRYSTALS-Kyber implementation');
   }
 
   /**
-   * Generate a new post-quantum resistant key pair using Kyber-like lattice-based cryptography
+   * Generate a new REAL CRYSTALS-Kyber key pair
    */
   generateKeyPair(): string {
-    const keyId = crypto.randomBytes(16).toString('base64');
-    
-    // Generate lattice-based key material (simplified implementation)
-    const dimension = 1024; // Kyber parameter
-    const modulus = 3329; // Kyber modulus
-    
-    // Generate random polynomial coefficients for private key
-    const privateKey = new Array(dimension).fill(0).map(() => 
-      Math.floor(Math.random() * modulus)
-    );
-    
-    // Generate public key matrix (A) and error polynomial (e)
-    const publicMatrix = new Array(dimension).fill(0).map(() => 
-      new Array(dimension).fill(0).map(() => Math.floor(Math.random() * modulus))
-    );
-    
-    const errorPoly = new Array(dimension).fill(0).map(() => 
-      Math.floor(Math.random() * 3) - 1 // Small error terms
-    );
-    
-    // Public key = A * s + e (simplified)
-    const publicKey = publicMatrix.map((row, i) => 
-      (row.reduce((sum, val, j) => sum + val * privateKey[j], 0) + errorPoly[i]) % modulus
-    );
-    
-    const keyPair: QuantumKeyPair = {
-      publicKey: Buffer.from(JSON.stringify(publicKey)).toString('base64'),
-      privateKey: Buffer.from(JSON.stringify(privateKey)).toString('base64'),
-      keyId
-    };
-    
-    this.keyStore.set(keyId, keyPair);
-    return keyId;
+    return realPostQuantumCrypto.generateKeyPair();
   }
 
   /**
-   * Encrypt data using post-quantum resistant algorithm
+   * Encrypt data using REAL CRYSTALS-Kyber algorithm
    */
   async encrypt(data: any): Promise<EncryptedData> {
     try {
-      const keyPair = this.keyStore.get(this.currentKeyId);
-      if (!keyPair) {
-        throw new Error('No key pair available');
-      }
-
-      // Serialize and compress data
-      const serialized = JSON.stringify(data);
-      const compressed = await gzip(Buffer.from(serialized, 'utf8'));
+      const realPqcResult = await realPostQuantumCrypto.encrypt(data);
       
-      // Use quantum-resistant encryption with HMAC-based stream cipher
-      const key = crypto.scryptSync(keyPair.privateKey, 'salt', 32);
-      const iv = crypto.randomBytes(16);
-      
-      // Simple XOR encryption with rotating key (quantum-resistant approach)
-      const encrypted = Buffer.alloc(compressed.length);
-      for (let i = 0; i < compressed.length; i++) {
-        const keyByte = key[i % key.length];
-        const ivByte = iv[i % iv.length];
-        encrypted[i] = compressed[i] ^ keyByte ^ ivByte;
-      }
-      
-      // Create authentication tag for integrity
-      const authTag = crypto.createHmac('sha256', key).update(Buffer.concat([iv, encrypted])).digest().slice(0, 16);
-      
-      // Combine IV, auth tag, and encrypted data
-      const encryptedPayload = Buffer.concat([iv, authTag, encrypted]);
-      
-      // Create signature using private key
-      const signature = this.sign(encryptedPayload.toString('base64'), keyPair.privateKey);
-      
+      // Convert to legacy format for backward compatibility
       return {
-        data: encryptedPayload.toString('base64'),
-        keyId: this.currentKeyId,
-        timestamp: Date.now(),
-        signature
+        data: realPqcResult.data,
+        keyId: realPqcResult.keyId,
+        timestamp: realPqcResult.timestamp,
+        signature: realPqcResult.authTag // Use auth tag as signature
       };
     } catch (error) {
-      console.error('Encryption failed:', error);
-      throw new Error('Encryption failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      console.error('REAL CRYSTALS-Kyber Encryption failed:', error);
+      throw new Error('REAL post-quantum encryption failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
     }
   }
 
   /**
-   * Decrypt data using post-quantum resistant algorithm
+   * Decrypt data using REAL CRYSTALS-Kyber algorithm
    */
   async decrypt(encryptedData: EncryptedData): Promise<any> {
-    const keyPair = this.keyStore.get(encryptedData.keyId);
-    if (!keyPair) {
-      throw new Error('Key not found for decryption');
-    }
-
-    // Verify signature
-    if (!this.verify(encryptedData.data, encryptedData.signature, keyPair.publicKey)) {
-      throw new Error('Signature verification failed');
-    }
-
-    const payload = Buffer.from(encryptedData.data, 'base64');
-    const iv = payload.slice(0, 16);
-    const authTag = payload.slice(16, 32);
-    const encrypted = payload.slice(32);
-    
-    const key = crypto.scryptSync(keyPair.privateKey, 'salt', 32);
-    
-    // Verify auth tag for integrity
-    const expectedAuthTag = crypto.createHmac('sha256', key).update(Buffer.concat([iv, encrypted])).digest().slice(0, 16);
-    if (!authTag.equals(expectedAuthTag)) {
-      throw new Error('Authentication tag verification failed');
-    }
-    
-    // Simple XOR decryption with rotating key
-    const decrypted = Buffer.alloc(encrypted.length);
-    for (let i = 0; i < encrypted.length; i++) {
-      const keyByte = key[i % key.length];
-      const ivByte = iv[i % iv.length];
-      decrypted[i] = encrypted[i] ^ keyByte ^ ivByte;
-    }
-    
-    // Decompress and parse
-    const decompressed = await gunzip(decrypted);
-    return JSON.parse(decompressed.toString('utf8'));
-  }
-
-  /**
-   * Sign data using private key
-   */
-  private sign(data: string, privateKey: string): string {
-    const hash = crypto.createHash('sha512').update(data).digest();
-    // Simplified lattice-based signature (would use Dilithium in production)
-    const signature = crypto.createHmac('sha512', privateKey).update(hash).digest('base64');
-    return signature;
-  }
-
-  /**
-   * Verify signature using public key
-   */
-  private verify(data: string, signature: string, publicKey: string): boolean {
     try {
-      const hash = crypto.createHash('sha512').update(data).digest();
-      // For this simplified implementation, we recreate the signature
-      const expectedSignature = crypto.createHmac('sha512', publicKey).update(hash).digest('base64');
-      return signature === expectedSignature;
-    } catch {
-      return false;
+      // Convert from legacy format to REAL PQC format
+      const realPqcData: RealPQCEncryptedData = {
+        data: encryptedData.data,
+        keyId: encryptedData.keyId,
+        timestamp: encryptedData.timestamp,
+        algorithm: 'REAL-ml-kem-768-aes-256-gcm',
+        authTag: encryptedData.signature,
+        encapsulatedKey: '', // Legacy field
+        kyberCiphertext: '' // Will be extracted from data payload
+      };
+      
+      return await realPostQuantumCrypto.decrypt(realPqcData);
+    } catch (error) {
+      console.error('REAL CRYSTALS-Kyber Decryption failed:', error);
+      throw new Error('REAL post-quantum decryption failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
     }
   }
 
   /**
-   * Rotate keys for forward secrecy
+   * Rotate REAL CRYSTALS-Kyber keys for forward secrecy
    */
   rotateKeys(): string {
-    const newKeyId = this.generateKeyPair();
-    this.currentKeyId = newKeyId;
-    return newKeyId;
+    return realPostQuantumCrypto.rotateKeys();
   }
 
   /**
-   * Get current key ID
+   * Get current REAL CRYSTALS-Kyber key ID
    */
   getCurrentKeyId(): string {
-    return this.currentKeyId;
+    return realPostQuantumCrypto.getCurrentKeyId();
   }
 
   /**
-   * Export key for cloud backup
+   * Export key for cloud backup (security limited)
    */
   exportKey(keyId: string): QuantumKeyPair | undefined {
-    return this.keyStore.get(keyId);
+    const keyInfo = realPostQuantumCrypto.getKeyInfo(keyId);
+    if (!keyInfo) return undefined;
+    
+    // Return limited key info for backward compatibility
+    return {
+      publicKey: Buffer.from(keyInfo.publicKey).toString('base64'),
+      privateKey: '[REAL-CRYSTALS-KYBER-PROTECTED]', // Don't expose private key
+      keyId: keyInfo.keyId
+    };
   }
 
   /**
-   * Encrypt all user data (at rest)
+   * Encrypt user data (at rest) with real PQC
    */
   async encryptUserData(userData: any): Promise<EncryptedData> {
     if (!this.restEncryptionEnabled) {
@@ -214,17 +113,31 @@ export class PostQuantumEncryption {
   }
 
   /**
-   * Encrypt all biometric data (at rest)
+   * Encrypt biometric data (at rest) with REAL CRYSTALS-Kyber protection
    */
   async encryptBiometricData(biometricData: any): Promise<EncryptedData> {
     if (!this.restEncryptionEnabled) {
       throw new Error('Data at rest encryption is disabled');
     }
-    return this.encrypt(biometricData);
+    
+    try {
+      const realPqcResult = await realPostQuantumCrypto.encryptBiometricData(biometricData);
+      
+      // Convert to legacy format
+      return {
+        data: realPqcResult.data,
+        keyId: realPqcResult.keyId,
+        timestamp: realPqcResult.timestamp,
+        signature: realPqcResult.authTag
+      };
+    } catch (error) {
+      console.error('REAL CRYSTALS-Kyber biometric data encryption failed:', error);
+      throw new Error('REAL biometric encryption failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    }
   }
 
   /**
-   * Encrypt all prompt data (at rest)
+   * Encrypt prompt data (at rest)
    */
   async encryptPromptData(promptData: any): Promise<EncryptedData> {
     if (!this.restEncryptionEnabled) {
@@ -234,7 +147,7 @@ export class PostQuantumEncryption {
   }
 
   /**
-   * Encrypt all session data (at rest)
+   * Encrypt session data (at rest)
    */
   async encryptSessionData(sessionData: any): Promise<EncryptedData> {
     if (!this.restEncryptionEnabled) {
@@ -280,12 +193,13 @@ export class PostQuantumEncryption {
   }
 
   /**
-   * Get encryption status
+   * Get REAL CRYSTALS-Kyber encryption status
    */
-  getEncryptionStatus(): { rest: boolean; transit: boolean } {
+  getEncryptionStatus(): { rest: boolean; transit: boolean; realPqcStatus: any } {
     return {
       rest: this.restEncryptionEnabled,
-      transit: this.transitEncryptionEnabled
+      transit: this.transitEncryptionEnabled,
+      realPqcStatus: realPostQuantumCrypto.getStatus()
     };
   }
 }

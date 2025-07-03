@@ -107,7 +107,7 @@ export interface TimePerceptionPattern {
 export interface EnergyPattern {
   energyLevels: number[];
   peakEnergyWindows: number[];
-  energyDepletion Rate: number;
+  energyDepletionRate: number;
   recoveryPatterns: string[];
   spoonTheoryScore: number;
   burnoutRiskFactors: string[];

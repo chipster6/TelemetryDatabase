@@ -81,22 +81,17 @@ export class MemStorage implements IStorage {
   }
 
   private initializeDefaultData() {
-    // Create default user
-    const defaultUser: User = {
-      id: this.currentId++,
-      username: "demo_user",
-      password: "demo_password"
-    };
-    this.users.set(defaultUser.id, defaultUser);
+    // No default users - users must be created through proper registration
+    // This prevents hardcoded credentials security vulnerability
 
-    // Create default prompt templates
+    // Create default prompt templates (without userId - will be assigned when user creates them)
     const templates = [
       {
         id: this.currentId++,
         name: "Creative Writing Assistant",
         systemPrompt: "You are an expert creative writing assistant. Your responses should be imaginative, well-structured, and engaging. Consider the user's biometric state when adjusting tone and complexity.",
         category: "Creative",
-        userId: defaultUser.id,
+        userId: null, // Templates will be assigned to users when they create them
         createdAt: new Date()
       },
       {
@@ -104,7 +99,7 @@ export class MemStorage implements IStorage {
         name: "Code Review Expert",
         systemPrompt: "You are a senior software engineer specializing in code review. Provide detailed, constructive feedback on code quality, best practices, and potential improvements.",
         category: "Technical",
-        userId: defaultUser.id,
+        userId: null, // Templates will be assigned to users when they create them
         createdAt: new Date()
       },
       {
@@ -112,7 +107,7 @@ export class MemStorage implements IStorage {
         name: "Data Analysis Specialist",
         systemPrompt: "You are a data analysis expert. Help users understand complex data patterns, provide insights, and suggest analytical approaches.",
         category: "Analytics",
-        userId: defaultUser.id,
+        userId: null, // Templates will be assigned to users when they create them
         createdAt: new Date()
       },
       {
@@ -120,7 +115,7 @@ export class MemStorage implements IStorage {
         name: "Business Strategy Advisor",
         systemPrompt: "You are a strategic business consultant with expertise in market analysis, competitive positioning, and growth strategies. Provide actionable insights for business decisions.",
         category: "Business",
-        userId: defaultUser.id,
+        userId: null, // Templates will be assigned to users when they create them
         createdAt: new Date()
       },
       {
@@ -128,7 +123,7 @@ export class MemStorage implements IStorage {
         name: "Scientific Research Assistant",
         systemPrompt: "You are a research scientist assistant specialized in methodology, literature review, and hypothesis development. Help design experiments and analyze research findings.",
         category: "Research",
-        userId: defaultUser.id,
+        userId: null, // Templates will be assigned to users when they create them
         createdAt: new Date()
       },
       {
@@ -136,7 +131,7 @@ export class MemStorage implements IStorage {
         name: "Learning & Education Tutor",
         systemPrompt: "You are an expert educator and tutor. Adapt your teaching style to the user's learning pace and comprehension level. Break down complex concepts into digestible parts.",
         category: "Education",
-        userId: defaultUser.id,
+        userId: null, // Templates will be assigned to users when they create them
         createdAt: new Date()
       },
       {
@@ -144,7 +139,7 @@ export class MemStorage implements IStorage {
         name: "Health & Wellness Coach",
         systemPrompt: "You are a certified health and wellness coach. Provide evidence-based advice on nutrition, fitness, mental health, and lifestyle optimization. Consider biometric data when available.",
         category: "Health",
-        userId: defaultUser.id,
+        userId: null, // Templates will be assigned to users when they create them
         createdAt: new Date()
       },
       {
@@ -152,7 +147,7 @@ export class MemStorage implements IStorage {
         name: "Legal Research Assistant",
         systemPrompt: "You are a legal research specialist with expertise in case law, regulations, and legal analysis. Provide thorough research and clear explanations of legal concepts.",
         category: "Legal",
-        userId: defaultUser.id,
+        userId: null, // Templates will be assigned to users when they create them
         createdAt: new Date()
       },
       {
@@ -160,7 +155,7 @@ export class MemStorage implements IStorage {
         name: "Financial Planning Advisor",
         systemPrompt: "You are a financial planning expert specializing in investment strategies, risk assessment, and wealth management. Provide personalized financial guidance and market insights.",
         category: "Finance",
-        userId: defaultUser.id,
+        userId: null, // Templates will be assigned to users when they create them
         createdAt: new Date()
       },
       {
@@ -168,7 +163,7 @@ export class MemStorage implements IStorage {
         name: "Marketing & Content Strategist",
         systemPrompt: "You are a digital marketing strategist with expertise in content creation, brand positioning, and campaign optimization. Create compelling marketing materials and strategies.",
         category: "Marketing",
-        userId: defaultUser.id,
+        userId: null, // Templates will be assigned to users when they create them
         createdAt: new Date()
       },
       {
@@ -176,7 +171,7 @@ export class MemStorage implements IStorage {
         name: "UX/UI Design Consultant",
         systemPrompt: "You are a user experience and interface design expert. Provide insights on user research, wireframing, prototyping, and design systems for optimal user experiences.",
         category: "Design",
-        userId: defaultUser.id,
+        userId: null, // Templates will be assigned to users when they create them
         createdAt: new Date()
       },
       {
@@ -184,7 +179,7 @@ export class MemStorage implements IStorage {
         name: "Project Management Expert",
         systemPrompt: "You are a certified project manager with expertise in agile methodologies, risk management, and team coordination. Help plan, execute, and monitor projects effectively.",
         category: "Management",
-        userId: defaultUser.id,
+        userId: null, // Templates will be assigned to users when they create them
         createdAt: new Date()
       },
       {
@@ -192,7 +187,7 @@ export class MemStorage implements IStorage {
         name: "Therapeutic Writing Guide",
         systemPrompt: "You are a therapeutic writing specialist. Guide users through reflective writing exercises that promote emotional processing and personal growth. Adapt based on stress levels.",
         category: "Wellness",
-        userId: defaultUser.id,
+        userId: null, // Templates will be assigned to users when they create them
         createdAt: new Date()
       },
       {
@@ -200,7 +195,7 @@ export class MemStorage implements IStorage {
         name: "Technical Documentation Writer",
         systemPrompt: "You are a technical writing expert specializing in clear, comprehensive documentation. Create user manuals, API docs, and technical guides that are accessible and well-structured.",
         category: "Technical",
-        userId: defaultUser.id,
+        userId: null, // Templates will be assigned to users when they create them
         createdAt: new Date()
       },
       {
@@ -208,7 +203,7 @@ export class MemStorage implements IStorage {
         name: "Innovation & Problem Solving",
         systemPrompt: "You are an innovation consultant specializing in creative problem-solving, design thinking, and breakthrough solutions. Help generate novel approaches to complex challenges.",
         category: "Innovation",
-        userId: defaultUser.id,
+        userId: null, // Templates will be assigned to users when they create them
         createdAt: new Date()
       },
       {
@@ -216,7 +211,7 @@ export class MemStorage implements IStorage {
         name: "Mindfulness & Meditation Guide",
         systemPrompt: "You are a mindfulness instructor and meditation guide. Provide personalized mindfulness exercises, breathing techniques, and stress reduction practices based on current stress levels.",
         category: "Wellness",
-        userId: defaultUser.id,
+        userId: null, // Templates will be assigned to users when they create them
         createdAt: new Date()
       },
       {
@@ -224,7 +219,7 @@ export class MemStorage implements IStorage {
         name: "Academic Research Writer",
         systemPrompt: "You are an academic writing specialist with expertise in research papers, thesis development, and scholarly communication. Help structure arguments and improve academic writing quality.",
         category: "Academic",
-        userId: defaultUser.id,
+        userId: null, // Templates will be assigned to users when they create them
         createdAt: new Date()
       },
       {
@@ -232,7 +227,7 @@ export class MemStorage implements IStorage {
         name: "Customer Service Optimizer",
         systemPrompt: "You are a customer experience specialist focused on service optimization, complaint resolution, and customer satisfaction strategies. Provide solutions for customer-facing challenges.",
         category: "Service",
-        userId: defaultUser.id,
+        userId: null, // Templates will be assigned to users when they create them
         createdAt: new Date()
       },
       {
@@ -240,7 +235,7 @@ export class MemStorage implements IStorage {
         name: "Productivity & Time Management",
         systemPrompt: "You are a productivity expert specializing in time management, workflow optimization, and efficiency strategies. Help users maximize their productive potential and reduce cognitive load.",
         category: "Productivity",
-        userId: defaultUser.id,
+        userId: null, // Templates will be assigned to users when they create them
         createdAt: new Date()
       },
       {
@@ -248,7 +243,7 @@ export class MemStorage implements IStorage {
         name: "AI Ethics & Philosophy",
         systemPrompt: "You are an AI ethics researcher and philosopher. Explore ethical implications of technology, discuss philosophical questions, and provide thoughtful analysis of complex moral issues.",
         category: "Ethics",
-        userId: defaultUser.id,
+        userId: null, // Templates will be assigned to users when they create them
         createdAt: new Date()
       }
     ];
@@ -257,37 +252,7 @@ export class MemStorage implements IStorage {
       this.promptTemplates.set(template.id, template);
     });
 
-    // Create default device connections
-    const devices = [
-      {
-        id: this.currentId++,
-        deviceType: "heart_rate_monitor",
-        deviceName: "Polar H10",
-        connectionStatus: "connected",
-        lastSeen: new Date(),
-        userId: defaultUser.id
-      },
-      {
-        id: this.currentId++,
-        deviceType: "smart_ring",
-        deviceName: "Oura Ring Gen3",
-        connectionStatus: "connected",
-        lastSeen: new Date(),
-        userId: defaultUser.id
-      },
-      {
-        id: this.currentId++,
-        deviceType: "environmental",
-        deviceName: "Environmental Sensors",
-        connectionStatus: "simulated",
-        lastSeen: new Date(),
-        userId: defaultUser.id
-      }
-    ];
-
-    devices.forEach(device => {
-      this.deviceConnections.set(device.id, device);
-    });
+    // No default device connections - devices will be connected per user
   }
 
   async getUser(id: number): Promise<User | undefined> {
@@ -300,7 +265,9 @@ export class MemStorage implements IStorage {
 
   async createUser(insertUser: InsertUser): Promise<User> {
     const id = this.currentId++;
-    const user: User = { ...insertUser, id };
+    // Hash the password before storing
+    const hashedPassword = await bcrypt.hash(insertUser.password, 10);
+    const user: User = { ...insertUser, password: hashedPassword, id };
     this.users.set(id, user);
     return user;
   }
@@ -309,8 +276,18 @@ export class MemStorage implements IStorage {
     const user = await this.getUserByUsername(username);
     if (!user) return undefined;
     
-    const isValid = await bcrypt.compare(password, user.password);
-    return isValid ? user : undefined;
+    // For MemStorage, passwords should be hashed when creating users
+    // This is a temporary check for plaintext passwords that should be removed
+    // once all users are properly created with hashed passwords
+    if (user.password.startsWith('$2')) {
+      // Password is already hashed
+      const isValid = await bcrypt.compare(password, user.password);
+      return isValid ? user : undefined;
+    } else {
+      // Legacy plaintext password - should not exist in production
+      console.error('WARNING: Plaintext password detected for user:', username);
+      return undefined; // Reject plaintext passwords for security
+    }
   }
 
   async getPromptTemplates(userId?: number): Promise<PromptTemplate[]> {
@@ -327,7 +304,8 @@ export class MemStorage implements IStorage {
     const newTemplate: PromptTemplate = { 
       ...template, 
       id, 
-      createdAt: new Date() 
+      createdAt: new Date(),
+      userId: template.userId ?? null
     };
     this.promptTemplates.set(id, newTemplate);
     return newTemplate;
@@ -365,7 +343,11 @@ export class MemStorage implements IStorage {
       id, 
       createdAt: new Date(),
       aiResponse: null,
-      responseTime: null
+      responseTime: null,
+      temperature: session.temperature ?? null,
+      maxTokens: session.maxTokens ?? null,
+      userId: session.userId ?? null,
+      templateId: session.templateId ?? null
     };
     this.promptSessions.set(id, newSession);
     return newSession;
@@ -409,9 +391,7 @@ export class MemStorage implements IStorage {
     const newData: BiometricData = { 
       ...data, 
       id, 
-      timestamp: new Date(),
-      // Store encryption metadata for decryption
-      metadata: JSON.stringify({ encrypted: true, keyId: encryptedData.keyId })
+      timestamp: new Date()
     };
     this.biometricData.set(id, newData);
     return newData;
@@ -434,7 +414,14 @@ export class MemStorage implements IStorage {
     const newCorrelation: CognitiveCorrelation = { 
       ...correlation, 
       id, 
-      timestamp: new Date() 
+      timestamp: new Date(),
+      sessionId: correlation.sessionId ?? null,
+      attentionScore: correlation.attentionScore ?? null,
+      stressScore: correlation.stressScore ?? null,
+      cognitiveLoadScore: correlation.cognitiveLoadScore ?? null,
+      circadianAlignment: correlation.circadianAlignment ?? null,
+      promptComplexityScore: correlation.promptComplexityScore ?? null,
+      responseQualityScore: correlation.responseQualityScore ?? null
     };
     this.cognitiveCorrelations.set(id, newCorrelation);
     return newCorrelation;
@@ -459,7 +446,8 @@ export class MemStorage implements IStorage {
     const newConnection: DeviceConnection = { 
       ...connection, 
       id, 
-      lastSeen: new Date() 
+      lastSeen: new Date(),
+      userId: connection.userId ?? null
     };
     this.deviceConnections.set(id, newConnection);
     return newConnection;

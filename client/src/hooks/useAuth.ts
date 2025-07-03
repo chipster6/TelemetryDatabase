@@ -39,13 +39,29 @@ export function useAuth() {
     },
   });
 
+  const registerMutation = useMutation({
+    mutationFn: async ({ username, password }: { username: string; password: string }) => {
+      const response = await apiRequest("POST", "/api/register", { username, password });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Registration failed");
+      }
+      return await response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/status"] });
+    },
+  });
+
   return {
     user: authData?.user,
     isAuthenticated: authData?.authenticated || false,
     isLoading,
     login: loginMutation.mutateAsync,
     logout: logoutMutation.mutateAsync,
+    register: registerMutation.mutateAsync,
     isLoginPending: loginMutation.isPending,
     isLogoutPending: logoutMutation.isPending,
+    isRegisterPending: registerMutation.isPending,
   };
 }

@@ -17,9 +17,36 @@ import { analyticsService } from "./services/analytics";
 import { cloudExportService } from "./services/cloud-export";
 import { postQuantumEncryption } from "./services/encryption";
 import { anonymizationService } from "./services/anonymization";
+import { gdprService } from "./services/gdpr-compliance";
 import { z } from "zod";
+import { 
+  validateCredentials, 
+  validateBiometricData, 
+  validatePromptTemplate, 
+  validatePromptSession,
+  validateDeviceConnection,
+  validateId,
+  validatePagination,
+  csrfProtection,
+  generateCsrfToken
+} from './middleware/validation.js';
+import {
+  requireAuth,
+  authorizeBiometricAccess,
+  authorizeTemplateAccess,
+  authorizeDeviceAccess,
+  auditLog
+} from './middleware/authorization.js';
 import { insertPromptSessionSchema, insertPromptTemplateSchema } from "@shared/schema";
 
+// Helper function to get time of day
+function getTimeOfDay(): string {
+  const hour = new Date().getHours();
+  if (hour < 6) return 'night';
+  if (hour < 12) return 'morning';
+  if (hour < 18) return 'afternoon';
+  return 'evening';
+}
 
 // Prompt engineering and refinement function
 function generateRefinedPrompt(biometricContext: any, systemPrompt: string, userInput: string): string {
@@ -197,14 +224,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     return res.status(401).json({ error: "Authentication required" });
   }
 
-  // Login route
-  app.post("/api/login", async (req, res) => {
+  // Login route with validation
+  app.post("/api/login", validateCredentials, async (req, res) => {
     try {
       const { username, password } = req.body;
-      
-      if (!username || !password) {
-        return res.status(400).json({ error: "Username and password required" });
-      }
+      // Input validation handled by middleware
 
       const user = await storage.authenticateUser(username, password);
       if (!user) {
@@ -221,6 +245,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Login error:', error);
       res.status(500).json({ error: "Login failed" });
+    }
+  });
+
+  // Registration route with validation and security
+  app.post("/api/register", validateCredentials, async (req, res) => {
+    try {
+      const { username, password } = req.body;
+      // Input validation handled by middleware
+      
+      // Check if user already exists
+      const existingUser = await storage.getUserByUsername(username);
+      if (existingUser) {
+        return res.status(409).json({ error: "Username already exists" });
+      }
+      
+      // Create new user with hashed password (hashing is done in storage layer)
+      const newUser = await storage.createUser({ username, password });
+      
+      // Log successful registration
+      console.log(`New user registered: ${username} from IP: ${req.ip}`);
+      
+      // Automatically log in the new user
+      req.session.userId = newUser.id;
+      req.session.username = newUser.username;
+      
+      res.status(201).json({ 
+        message: "Registration successful", 
+        user: { id: newUser.id, username: newUser.username } 
+      });
+    } catch (error) {
+      console.error('Registration error:', error);
+      res.status(500).json({ error: "Registration failed" });
     }
   });
 
@@ -270,7 +326,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Create new prompt template
-  app.post("/api/templates", async (req, res) => {
+  app.post("/api/templates", authorizeTemplateAccess, validatePromptTemplate, async (req, res) => {
     try {
       const validatedData = insertPromptTemplateSchema.parse(req.body);
       const template = await storage.createPromptTemplate(validatedData);
@@ -285,7 +341,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Generate AI response
-  app.post("/api/generate", async (req, res) => {
+  app.post("/api/generate", requireAuth, validatePromptSession, async (req, res) => {
     try {
       // Rate limiting
       if (!rateLimit(req.ip || 'unknown')) {
@@ -479,7 +535,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Store biometric data - Weaviate-first approach
-  app.post("/api/biometric", async (req, res) => {
+  app.post("/api/biometric", authorizeBiometricAccess, validateBiometricData, auditLog('BIOMETRIC_DATA_STORE'), async (req, res) => {
     try {
       const userId = req.session?.userId || 1;
       
@@ -583,7 +639,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Update device connection status
-  app.patch("/api/devices/:id", async (req, res) => {
+  app.patch("/api/devices/:id", authorizeDeviceAccess, validateId('id'), validateDeviceConnection, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const { connectionStatus } = req.body;
@@ -830,7 +886,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Query and biometrics required" });
       }
 
-      const context = await weaviateService.buildLLMContext(query, biometrics, req.session.userId);
+      const context = await weaviateService.buildLLMContext(query, biometrics, req.session.userId!);
       res.json(context);
     } catch (error) {
       console.error('Failed to build LLM context:', error);
@@ -847,7 +903,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Biometrics required" });
       }
 
-      const strategy = await weaviateService.getOptimalResponseStrategy(biometrics, req.session.userId);
+      const strategy = await weaviateService.getOptimalResponseStrategy(biometrics, req.session.userId!);
       res.json({ strategy });
     } catch (error) {
       console.error('Failed to get optimal strategy:', error);
@@ -872,7 +928,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         domain: req.body.domain
       };
 
-      const response = await ragService.generateWithContext(userQuery, biometrics, req.session.userId);
+      const response = await ragService.generateWithContext(userQuery, biometrics, req.session.userId!);
       res.json(response);
     } catch (error) {
       console.error('Failed to generate RAG response:', error);
@@ -981,7 +1037,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { trainingExportService } = await import('./services/training-export.service.js');
       const config = req.body;
       
-      const jobId = await trainingExportService.exportTrainingData(config);
+      const jobId = await trainingExportService.startExport(config);
       res.json({ success: true, jobId });
     } catch (error) {
       console.error('Failed to start training export:', error);
@@ -1085,6 +1141,111 @@ export async function registerRoutes(app: Express): Promise<Server> {
         success: false, 
         error: error instanceof Error ? error.message : 'Status retrieval failed' 
       });
+    }
+  });
+
+  // GDPR Compliance Endpoints
+  
+  // Record consent for biometric data processing
+  app.post("/api/gdpr/consent", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session!.userId!;
+      const { consentType, purpose, legalBasis, dataCategories, retentionPeriod } = req.body;
+      
+      if (!consentType || !purpose || !legalBasis || !dataCategories || !retentionPeriod) {
+        return res.status(400).json({ error: "Missing required consent parameters" });
+      }
+      
+      const consent = await gdprService.recordConsent(
+        userId,
+        consentType,
+        purpose,
+        legalBasis,
+        dataCategories,
+        retentionPeriod,
+        req.ip || 'unknown',
+        req.get('User-Agent') || 'unknown'
+      );
+      
+      res.status(201).json({ success: true, consent });
+    } catch (error) {
+      console.error('Consent recording error:', error);
+      res.status(500).json({ error: "Failed to record consent" });
+    }
+  });
+
+  // Get user's consent status
+  app.get("/api/gdpr/consent", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session!.userId!;
+      const status = gdprService.getConsentStatus(userId);
+      res.json({ success: true, consents: status });
+    } catch (error) {
+      console.error('Consent status error:', error);
+      res.status(500).json({ error: "Failed to retrieve consent status" });
+    }
+  });
+
+  // Revoke consent
+  app.delete("/api/gdpr/consent/:id", requireAuth, validateId('id'), async (req, res) => {
+    try {
+      const userId = req.session!.userId!;
+      const consentId = parseInt(req.params.id);
+      
+      const success = await gdprService.revokeConsent(consentId, userId);
+      if (!success) {
+        return res.status(404).json({ error: "Consent not found or access denied" });
+      }
+      
+      res.json({ success: true, message: "Consent revoked successfully" });
+    } catch (error) {
+      console.error('Consent revocation error:', error);
+      res.status(500).json({ error: "Failed to revoke consent" });
+    }
+  });
+
+  // Submit data subject request
+  app.post("/api/gdpr/request", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session!.userId!;
+      const { requestType, reason } = req.body;
+      
+      if (!requestType || !['access', 'portability', 'erasure', 'rectification', 'restriction'].includes(requestType)) {
+        return res.status(400).json({ error: "Invalid request type" });
+      }
+      
+      const request = await gdprService.submitDataSubjectRequest(userId, requestType, reason);
+      res.status(201).json({ success: true, request });
+    } catch (error) {
+      console.error('Data subject request error:', error);
+      res.status(500).json({ error: "Failed to submit request" });
+    }
+  });
+
+  // Get user's data subject requests
+  app.get("/api/gdpr/requests", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session!.userId!;
+      const requests = gdprService.getDataSubjectRequests(userId);
+      res.json({ success: true, requests });
+    } catch (error) {
+      console.error('Data subject requests retrieval error:', error);
+      res.status(500).json({ error: "Failed to retrieve requests" });
+    }
+  });
+
+  // Export user data (GDPR Article 20 - Data portability)
+  app.get("/api/gdpr/export", requireAuth, auditLog('GDPR_DATA_EXPORT'), async (req, res) => {
+    try {
+      const userId = req.session!.userId!;
+      const userData = await gdprService.exportUserData(userId);
+      
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Content-Disposition', `attachment; filename="user-data-${userId}-${new Date().toISOString().split('T')[0]}.json"`);
+      res.json({ success: true, userData });
+    } catch (error) {
+      console.error('Data export error:', error);
+      res.status(500).json({ error: "Failed to export user data" });
     }
   });
 

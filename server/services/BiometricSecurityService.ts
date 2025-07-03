@@ -117,9 +117,9 @@ export class BiometricSecurityService extends EventEmitter {
       
       // Encrypt using AES-256-GCM (post-quantum safe)
       const algorithm = 'aes-256-gcm';
-      const iv = crypto.randomBytes(16);
-      const cipher = crypto.createCipher(algorithm, key);
-      cipher.setIV(iv);
+      const iv = crypto.randomBytes(12); // GCM standard IV size
+      const cipher = crypto.createCipherGCM(algorithm, key);
+      cipher.setIVBytes(iv);
       
       const serializedData = JSON.stringify(protectedData);
       let encrypted = cipher.update(serializedData, 'utf8', 'hex');
@@ -195,8 +195,8 @@ export class BiometricSecurityService extends EventEmitter {
       
       // Decrypt using specified algorithm
       const algorithm = encryptedData.algorithm || 'aes-256-gcm';
-      const decipher = crypto.createDecipher(algorithm, key);
-      decipher.setIV(Buffer.from(encryptedData.iv, 'hex'));
+      const decipher = crypto.createDecipherGCM(algorithm, key);
+      decipher.setIVBytes(Buffer.from(encryptedData.iv, 'hex'));
       decipher.setAuthTag(Buffer.from(encryptedData.authTag, 'hex'));
       
       let decrypted = decipher.update(encryptedData.encryptedData, 'hex', 'utf8');

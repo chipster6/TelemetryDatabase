@@ -116,6 +116,13 @@ export default function Login({ onLoginSuccess }: LoginProps) {
             >
               {isLoginPending ? "Signing in..." : "Sign In"}
             </Button>
+            
+            <div className="text-center text-sm mt-4">
+              Don't have an account?{" "}
+              <Link href="/register" className="text-primary hover:underline">
+                Create one
+              </Link>
+            </div>
           </form>
         </CardContent>
       </Card>

@@ -17,13 +17,18 @@ app.use(session({
     tableName: 'sessions',
     createTableIfMissing: false,
   }),
-  secret: process.env.SESSION_SECRET || 'your-secret-key',
+  secret: process.env.SESSION_SECRET || (() => {
+    console.error('SECURITY WARNING: SESSION_SECRET not set in environment variables');
+    console.error('Generate a secure session secret and set it in .env file');
+    throw new Error('SESSION_SECRET environment variable is required for security');
+  })(),
   resave: false,
   saveUninitialized: false,
   cookie: {
     httpOnly: true,
-    secure: false, // Set to true in production with HTTPS
-    maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    secure: process.env.NODE_ENV === 'production', // Always secure in production
+    maxAge: 30 * 60 * 1000, // 30 minutes for security
+    sameSite: 'strict', // CSRF protection
   },
 }));
 

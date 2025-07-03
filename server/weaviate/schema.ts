@@ -68,9 +68,9 @@ export const nexisWeaviateSchema: WeaviateClassDefinition[] = [
       { name: "userId", dataType: ["int"], description: "User identifier", indexFilterable: true },
       { name: "sessionId", dataType: ["string"], description: "Session identifier", indexFilterable: true },
       { name: "timestamp", dataType: ["date"], description: "Conversation timestamp", indexFilterable: true },
-      { name: "userMessage", dataType: ["text"], description: "User's input message", indexSearchable: true },
-      { name: "aiResponse", dataType: ["text"], description: "AI's response", indexSearchable: true },
-      { name: "conversationContext", dataType: ["text"], description: "Full conversation history", indexSearchable: true },
+      { name: "userMessage", dataType: ["text"], description: "User's input message" },
+      { name: "aiResponse", dataType: ["text"], description: "AI's response" },
+      { name: "conversationContext", dataType: ["text"], description: "Full conversation history" },
       { name: "conversationType", dataType: ["string"], description: "Type of conversation (casual, technical, creative, etc.)", indexFilterable: true },
       
       // Effectiveness and learning
@@ -126,7 +126,7 @@ export const nexisWeaviateSchema: WeaviateClassDefinition[] = [
     properties: [
       { name: "memoryId", dataType: ["string"], description: "Unique memory identifier", indexFilterable: true },
       { name: "userId", dataType: ["int"], description: "User identifier", indexFilterable: true },
-      { name: "content", dataType: ["text"], description: "Memory content", indexSearchable: true },
+      { name: "content", dataType: ["text"], description: "Memory content" },
       { name: "memoryType", dataType: ["string"], description: "Type of memory (fact, experience, preference, skill, insight, pattern)", indexFilterable: true },
       { name: "importance", dataType: ["number"], description: "Memory importance (0-1)", indexFilterable: true },
       { name: "confidenceLevel", dataType: ["number"], description: "Confidence in memory accuracy (0-1)", indexFilterable: true },
@@ -160,7 +160,7 @@ export const nexisWeaviateSchema: WeaviateClassDefinition[] = [
     properties: [
       { name: "patternId", dataType: ["string"], description: "Unique pattern identifier", indexFilterable: true },
       { name: "patternName", dataType: ["string"], description: "Human-readable pattern name", indexFilterable: true },
-      { name: "description", dataType: ["text"], description: "Pattern description", indexSearchable: true },
+      { name: "description", dataType: ["text"], description: "Pattern description" },
       
       // Biometric signature ranges
       { name: "heartRateMin", dataType: ["number"], description: "Minimum heart rate", indexFilterable: true },
@@ -205,13 +205,13 @@ export const nexisWeaviateSchema: WeaviateClassDefinition[] = [
     properties: [
       { name: "templateId", dataType: ["string"], description: "Unique template identifier", indexFilterable: true },
       { name: "name", dataType: ["string"], description: "Template name", indexFilterable: true },
-      { name: "description", dataType: ["text"], description: "Template description", indexSearchable: true },
+      { name: "description", dataType: ["text"], description: "Template description" },
       { name: "category", dataType: ["string"], description: "Template category", indexFilterable: true },
       { name: "subcategory", dataType: ["string"], description: "Template subcategory", indexFilterable: true },
       
       // Template content
-      { name: "systemPrompt", dataType: ["text"], description: "System prompt template", indexSearchable: true },
-      { name: "userPromptTemplate", dataType: ["text"], description: "User prompt template", indexSearchable: true },
+      { name: "systemPrompt", dataType: ["text"], description: "System prompt template" },
+      { name: "userPromptTemplate", dataType: ["text"], description: "User prompt template" },
       { name: "variables", dataType: ["string[]"], description: "Template variables", indexFilterable: true },
       { name: "examples", dataType: ["text[]"], description: "Usage examples" },
       
@@ -322,7 +322,7 @@ export async function getSchemaStats(weaviateClient: any): Promise<any> {
     
   } catch (error) {
     console.error('Failed to get schema stats:', error);
-    return { error: error.message };
+    return { error: error instanceof Error ? error.message : 'Unknown error' };
   }
 }
 
