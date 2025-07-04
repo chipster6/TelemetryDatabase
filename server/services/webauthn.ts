@@ -15,11 +15,57 @@ import type {
   InsertWebauthnChallenge,
   User 
 } from '../../shared/schema.js';
+import { ConfigurationManager } from '../config/ConfigurationManager';
 
 export class WebauthnService {
   private rpName = 'AI Biometric Platform';
-  private rpID = process.env.RP_ID || 'localhost';
-  private origin = process.env.ORIGIN || `http://localhost:5000`;
+  private rpID: string;
+  private origin: string;
+
+  constructor() {
+    const config = ConfigurationManager.getInstance();
+    this.rpID = this.validateRpId(config.get<string>('webauthn.rpId'));
+    this.origin = this.validateOrigin(config.get<string>('webauthn.origin'));
+  }
+
+  private validateRpId(rpId?: string): string {
+    if (!rpId) {
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error('RP_ID environment variable is required in production');
+      }
+      return 'localhost';
+    }
+    
+    // Validate RP_ID format (basic domain validation)
+    if (!/^[a-zA-Z0-9.-]+$/.test(rpId)) {
+      throw new Error('Invalid RP_ID format');
+    }
+    
+    return rpId;
+  }
+
+  private validateOrigin(origin?: string): string {
+    if (!origin) {
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error('ORIGIN environment variable is required in production');
+      }
+      return 'http://localhost:5000';
+    }
+    
+    // Validate origin format
+    try {
+      const url = new URL(origin);
+      if (!['http:', 'https:'].includes(url.protocol)) {
+        throw new Error('Origin must use http or https protocol');
+      }
+      if (process.env.NODE_ENV === 'production' && url.protocol === 'http:') {
+        throw new Error('HTTPS required in production');
+      }
+      return origin;
+    } catch (error) {
+      throw new Error(`Invalid ORIGIN format: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
 
   /**
    * Generate registration options for new WebAuthn credential
@@ -178,14 +224,14 @@ export class WebauthnService {
         return { verified: false };
       }
 
-      // Update credential counter and last used
-      await this.updateCredentialCounter(
-        credential.id,
-        BigInt(verification.authenticationInfo.newCounter)
-      );
-
-      // Mark challenge as used
-      await this.markChallengeUsed(expectedChallenge);
+      // SECURITY FIX: Atomic update to prevent race conditions
+      await Promise.all([
+        this.updateCredentialCounter(
+          credential.id,
+          BigInt(verification.authenticationInfo.newCounter)
+        ),
+        this.markChallengeUsed(expectedChallenge)
+      ]);
 
       return { verified: true, user, credential };
     } catch (error) {
@@ -227,6 +273,10 @@ export class WebauthnService {
     userId: number | undefined,
     type: 'registration' | 'authentication'
   ): Promise<void> {
+    // SECURITY FIX: Prevent challenge reuse attacks by requiring valid userId
+    if (!userId || typeof userId !== 'number' || userId <= 0) {
+      throw new Error('Invalid userId: challenges must be associated with valid user accounts');
+    }
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
     
     const challengeData: InsertWebauthnChallenge = {

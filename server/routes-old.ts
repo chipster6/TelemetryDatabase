@@ -1,0 +1,1288 @@
+import type { Express, Request } from "express";
+import { createServer, type Server } from "http";
+import { WebSocketServer, WebSocket } from "ws";
+import { storage } from "./storage";
+
+// Extend session data interface
+declare module 'express-session' {
+  interface SessionData {
+    userId?: number;
+    username?: string;
+    role?: 'admin' | 'user';
+  }
+}
+
+import { biometricService } from "./services/biometric";
+import { vectorDatabase } from "./services/vector-database";
+import { analyticsService } from "./services/analytics";
+import { cloudExportService } from "./services/cloud-export";
+import { postQuantumEncryption } from "./services/encryption";
+import { anonymizationService } from "./services/anonymization";
+import { gdprService } from "./services/gdpr-compliance";
+import { z } from "zod";
+import { 
+  validateCredentials, 
+  validateBiometricData, 
+  validatePromptTemplate, 
+  validatePromptSession,
+  validateDeviceConnection,
+  validateId,
+  validatePagination,
+  csrfProtection,
+  generateCsrfToken
+} from './middleware/validation.js';
+import {
+  requireAuth,
+  authorizeBiometricAccess,
+  authorizeTemplateAccess,
+  authorizeDeviceAccess,
+  auditLog
+} from './middleware/authorization.js';
+import { insertPromptSessionSchema, insertPromptTemplateSchema } from "@shared/schema";
+
+// Helper function to get time of day
+function getTimeOfDay(): string {
+  const hour = new Date().getHours();
+  if (hour < 6) return 'night';
+  if (hour < 12) return 'morning';
+  if (hour < 18) return 'afternoon';
+  return 'evening';
+}
+
+// Prompt engineering and refinement function
+function generateRefinedPrompt(biometricContext: any, systemPrompt: string, userInput: string): string {
+  // Extract the role/purpose from system prompt
+  const role = systemPrompt.toLowerCase().includes('creative') ? 'creative assistant' :
+               systemPrompt.toLowerCase().includes('technical') ? 'technical expert' :
+               systemPrompt.toLowerCase().includes('business') ? 'business strategist' :
+               systemPrompt.toLowerCase().includes('research') ? 'research specialist' :
+               'expert assistant';
+
+  // Analyze user input for improvement opportunities
+  const inputWords = userInput.split(' ').length;
+  const hasContext = userInput.toLowerCase().includes('context') || userInput.toLowerCase().includes('background');
+  const hasConstraints = userInput.toLowerCase().includes('format') || userInput.toLowerCase().includes('length') || userInput.toLowerCase().includes('style');
+  const hasExamples = userInput.toLowerCase().includes('example') || userInput.toLowerCase().includes('like');
+  
+  // Generate refined prompt with proper structure
+  let refinedPrompt = `You are a ${role} with deep expertise in your field.\n\n`;
+  
+  // Enhance the original prompt with context
+  refinedPrompt += `## Task\n${userInput}\n\n`;
+  
+  // Add comprehensive prompt engineering best practices
+  refinedPrompt += "## Response Guidelines\n";
+  refinedPrompt += "Please provide a comprehensive response that includes:\n\n";
+  
+  // Add structure and best practices based on input analysis
+  if (!hasContext) {
+    refinedPrompt += "**Context & Background:**\n";
+    refinedPrompt += "- Relevant background information\n";
+    refinedPrompt += "- Current industry standards and best practices\n";
+    refinedPrompt += "- Important considerations or prerequisites\n\n";
+  }
+  
+  refinedPrompt += "**Core Content:**\n";
+  refinedPrompt += "- Clear, actionable insights and advice\n";
+  refinedPrompt += "- Step-by-step guidance where applicable\n";
+  refinedPrompt += "- Specific recommendations tailored to the request\n\n";
+  
+  if (!hasExamples && inputWords < 15) {
+    refinedPrompt += "**Examples & Applications:**\n";
+    refinedPrompt += "- Concrete examples to illustrate key points\n";
+    refinedPrompt += "- Real-world use cases or scenarios\n";
+    refinedPrompt += "- Practical implementation details\n\n";
+  }
+  
+  if (!hasConstraints) {
+    refinedPrompt += "**Format & Structure:**\n";
+    refinedPrompt += "- Use clear headings and organized sections\n";
+    refinedPrompt += "- Include bullet points or numbered lists for clarity\n";
+    refinedPrompt += "- Highlight key takeaways or important notes\n\n";
+  }
+  
+  // Add professional closing instruction
+  refinedPrompt += "## Quality Standards\n";
+  refinedPrompt += "Ensure your response is:\n";
+  refinedPrompt += "- Comprehensive yet focused on the specific request\n";
+  refinedPrompt += "- Practical and immediately actionable\n";
+  refinedPrompt += "- Backed by expertise and current best practices\n";
+  refinedPrompt += "- Well-structured and easy to follow\n\n";
+  
+  refinedPrompt += "---\n\n";
+  refinedPrompt += `**User's Original Request:** ${userInput}`;
+  
+  return refinedPrompt;
+}
+
+// Middleware to encrypt sensitive API responses
+async function encryptResponse(data: any, isSensitive: boolean = false): Promise<any> {
+  if (!isSensitive) return data;
+  try {
+    const encrypted = await postQuantumEncryption.encryptForTransmission(data);
+    return {
+      encrypted: true,
+      data: encrypted.data,
+      keyId: encrypted.keyId,
+      timestamp: encrypted.timestamp,
+      signature: encrypted.signature
+    };
+  } catch (error) {
+    console.error('Encryption failed:', error);
+    return data; // Fallback to unencrypted data if encryption fails
+  }
+}
+
+// Middleware to decrypt sensitive API requests  
+async function decryptRequest(encryptedData: any): Promise<any> {
+  try {
+    if (!encryptedData.encrypted) {
+      return encryptedData; // Return as-is if not encrypted
+    }
+    return await postQuantumEncryption.decryptFromTransmission({
+      data: encryptedData.data,
+      keyId: encryptedData.keyId,
+      timestamp: encryptedData.timestamp,
+      signature: encryptedData.signature
+    });
+  } catch (error) {
+    console.error('Decryption failed:', error);
+    throw new Error('Failed to decrypt request data');
+  }
+}
+
+export async function registerRoutes(app: Express): Promise<Server> {
+  const httpServer = createServer(app);
+
+  // Simple rate limiting for API endpoints
+  const requests = new Map<string, number[]>();
+  const rateLimit = (ip: string, maxRequests: number = 100, windowMs: number = 60000): boolean => {
+    const now = Date.now();
+    if (!requests.has(ip)) requests.set(ip, []);
+    
+    const userRequests = requests.get(ip)!;
+    const validRequests = userRequests.filter(time => now - time < windowMs);
+    
+    if (validRequests.length >= maxRequests) return false;
+    
+    validRequests.push(now);
+    requests.set(ip, validRequests);
+    return true;
+  };
+
+  // WebSocket server for real-time biometric data
+  const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
+  
+  const clients = new Set<WebSocket>();
+
+  wss.on('connection', (ws) => {
+    clients.add(ws);
+    console.log('Client connected to biometric stream');
+
+    ws.on('close', () => {
+      clients.delete(ws);
+      console.log('Client disconnected from biometric stream');
+    });
+
+    ws.on('error', (error) => {
+      console.error('WebSocket error:', error);
+      clients.delete(ws);
+    });
+  });
+
+  // Broadcast biometric data to all connected clients
+  function broadcastBiometricData(data: any) {
+    const message = JSON.stringify(data);
+    clients.forEach(client => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(message);
+      }
+    });
+  }
+
+  // Start simulated biometric data generation
+  setInterval(async () => {
+    try {
+      const simulatedData = biometricService.generateRealisticBiometricData();
+      const savedData = await biometricService.processBiometricReading(simulatedData);
+      
+      broadcastBiometricData({
+        type: 'biometric_update',
+        data: savedData
+      });
+    } catch (error) {
+      console.error('Error generating biometric data:', error);
+    }
+  }, 3000); // Every 3 seconds
+
+  // API Routes
+
+  // Authentication middleware
+  function requireAuth(req: Request, res: any, next: any) {
+    if (req.session && req.session.userId) {
+      return next();
+    }
+    return res.status(401).json({ error: "Authentication required" });
+  }
+
+  // Login route with validation
+  app.post("/api/login", validateCredentials, async (req, res) => {
+    try {
+      const { username, password } = req.body;
+      // Input validation handled by middleware
+
+      const user = await storage.authenticateUser(username, password);
+      if (!user) {
+        return res.status(401).json({ error: "Invalid credentials" });
+      }
+
+      // SECURITY FIX: Regenerate session ID to prevent session fixation attacks
+      req.session.regenerate((err) => {
+        if (err) {
+          console.error('Session regeneration error:', err);
+          return res.status(500).json({ error: "Session error" });
+        }
+
+        req.session.userId = user.id;
+        req.session.username = user.username;
+        req.session.role = user.role || 'user'; // Set role in session for authorization
+        
+        req.session.save((err) => {
+          if (err) {
+            console.error('Session save error:', err);
+            return res.status(500).json({ error: "Session error" });
+          }
+
+          res.json({ 
+            message: "Login successful", 
+            user: { 
+              id: user.id, 
+              username: user.username,
+              role: user.role || 'user'
+            } 
+          });
+        });
+      });
+    } catch (error) {
+      console.error('Login error:', error);
+      res.status(500).json({ error: "Login failed" });
+    }
+  });
+
+  // Registration route with validation and security
+  app.post("/api/register", validateCredentials, async (req, res) => {
+    try {
+      const { username, password } = req.body;
+      // Input validation handled by middleware
+      
+      // Check if user already exists
+      const existingUser = await storage.getUserByUsername(username);
+      if (existingUser) {
+        return res.status(409).json({ error: "Username already exists" });
+      }
+      
+      // Create new user with hashed password (hashing is done in storage layer)
+      const newUser = await storage.createUser({ username, password });
+      
+      // Log successful registration
+      console.log(`New user registered: ${username} from IP: ${req.ip}`);
+      
+      // Automatically log in the new user
+      req.session.userId = newUser.id;
+      req.session.username = newUser.username;
+      
+      res.status(201).json({ 
+        message: "Registration successful", 
+        user: { id: newUser.id, username: newUser.username } 
+      });
+    } catch (error) {
+      console.error('Registration error:', error);
+      res.status(500).json({ error: "Registration failed" });
+    }
+  });
+
+  // Logout route with enhanced security
+  app.post("/api/logout", (req, res) => {
+    const userId = req.session?.userId;
+    const username = req.session?.username;
+    
+    req.session.destroy((err: any) => {
+      if (err) {
+        console.error('Logout error:', err);
+        return res.status(500).json({ error: "Logout failed" });
+      }
+      
+      // Clear session cookie
+      res.clearCookie('connect.sid');
+      
+      // Log successful logout
+      if (userId && username) {
+        console.log(`User ${username} (ID: ${userId}) logged out from IP: ${req.ip}`);
+      }
+      
+      res.json({ message: "Logout successful" });
+    });
+  });
+
+  // Check authentication status
+  app.get("/api/auth/status", (req, res) => {
+    if (req.session && req.session.userId) {
+      res.json({ 
+        authenticated: true,
+        user: { id: req.session.userId, username: req.session.username }
+      });
+    } else {
+      res.json({ authenticated: false });
+    }
+  });
+
+  // Get prompt templates (protected)
+  app.get("/api/templates", requireAuth, async (req, res) => {
+    try {
+      const templates = await storage.getPromptTemplates();
+      res.json(templates);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch prompt templates" });
+    }
+  });
+
+  // Create new prompt template
+  app.post("/api/templates", authorizeTemplateAccess, validatePromptTemplate, async (req, res) => {
+    try {
+      const validatedData = insertPromptTemplateSchema.parse(req.body);
+      const template = await storage.createPromptTemplate(validatedData);
+      res.status(201).json(template);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        res.status(400).json({ error: "Invalid template data", details: error.errors });
+      } else {
+        res.status(500).json({ error: "Failed to create template" });
+      }
+    }
+  });
+
+  // Generate AI response
+  app.post("/api/generate", requireAuth, validatePromptSession, async (req, res) => {
+    try {
+      // Rate limiting
+      if (!rateLimit(req.ip || 'unknown')) {
+        return res.status(429).json({ error: "Too many requests" });
+      }
+      
+      const startTime = Date.now();
+      const schema = insertPromptSessionSchema.extend({
+        biometricContext: z.object({
+          heartRate: z.number().optional(),
+          hrv: z.number().optional(),
+          stressLevel: z.number().optional(),
+          attentionLevel: z.number().optional(),
+          cognitiveLoad: z.number().optional(),
+          environmentalFactors: z.object({
+            soundLevel: z.number().optional(),
+            temperature: z.number().optional(),
+            lightLevel: z.number().optional(),
+          }).optional(),
+        }).optional(),
+      });
+
+      const validatedData = schema.parse(req.body);
+      
+      // Create prompt session
+      const session = await storage.createPromptSession({
+        templateId: validatedData.templateId,
+        systemPrompt: validatedData.systemPrompt,
+        userInput: validatedData.userInput,
+        temperature: validatedData.temperature,
+        maxTokens: validatedData.maxTokens,
+        userId: validatedData.userId,
+      });
+
+      // Generate refined prompt (no external AI)
+      const analysisResponse = {
+        content: generateRefinedPrompt(validatedData.biometricContext, validatedData.systemPrompt, validatedData.userInput),
+        responseTime: Math.floor(Math.random() * 50) + 10, // Simulate processing time
+        type: 'prompt_refinement'
+      };
+
+      // Update session with response
+      const updatedSession = await storage.updatePromptSession(session.id, {
+        aiResponse: analysisResponse.content,
+        responseTime: analysisResponse.responseTime,
+      });
+
+      // Store biometric context if provided
+      if (validatedData.biometricContext) {
+        await biometricService.processBiometricReading({
+          heartRate: validatedData.biometricContext.heartRate,
+          hrv: validatedData.biometricContext.hrv,
+          stressLevel: validatedData.biometricContext.stressLevel,
+          attentionLevel: validatedData.biometricContext.attentionLevel,
+          cognitiveLoad: validatedData.biometricContext.cognitiveLoad,
+          environmentalData: validatedData.biometricContext.environmentalFactors,
+          deviceSource: 'prompt_session',
+        }, session.id);
+      }
+
+      const responseTime = Date.now() - startTime;
+      
+      res.json({
+        session: updatedSession,
+        response: { ...analysisResponse, responseTime },
+      });
+    } catch (error) {
+      console.error('Generate API error:', error);
+      if (error instanceof z.ZodError) {
+        res.status(400).json({ error: "Invalid request data", details: error.errors });
+      } else {
+        res.status(500).json({ error: "Failed to generate response" });
+      }
+    }
+  });
+
+  // Get recent prompt sessions
+  app.get("/api/sessions", async (req, res) => {
+    try {
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 20;
+      const sessions = await storage.getPromptSessions(undefined, limit);
+      res.json(sessions);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch sessions" });
+    }
+  });
+
+  // Get biometric data - Weaviate-first approach
+  app.get("/api/biometric", async (req, res) => {
+    try {
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
+      
+      // Search Weaviate for biometric conversations instead of PostgreSQL
+      const { weaviateService } = await import('./services/weaviate.service.js');
+      const conversations = await weaviateService.searchConversations('biometric', limit);
+      
+      // Transform to legacy format for compatibility
+      const biometricData = conversations.map(conv => ({
+        id: conv.conversationId,
+        heartRate: conv.heartRate,
+        hrv: conv.hrv,
+        stressLevel: conv.stressLevel,
+        attentionLevel: conv.attentionLevel,
+        cognitiveLoad: conv.cognitiveLoad,
+        timestamp: new Date(conv.timestamp),
+        userId: conv.userId,
+        effectiveness: conv.effectivenessScore
+      }));
+
+      // Convert to PostgreSQL format for compatibility with anonymization service
+      const legacyFormat = biometricData.map(item => ({
+        id: parseInt(item.id) || 0,
+        sessionId: null,
+        heartRate: item.heartRate || null,
+        hrv: item.hrv || null,
+        stressLevel: item.stressLevel || null,
+        attentionLevel: item.attentionLevel || null,
+        cognitiveLoad: item.cognitiveLoad || null,
+        skinTemperature: null,
+        respiratoryRate: null,
+        oxygenSaturation: null,
+        environmentalData: null,
+        deviceSource: 'weaviate',
+        timestamp: item.timestamp
+      }));
+      
+      // Generate anonymized statistics for privacy
+      const anonymizedStats = anonymizationService.generateAnonymizedStats(legacyFormat);
+      res.json({
+        ...anonymizedStats,
+        source: 'weaviate_primary',
+        totalConversations: conversations.length
+      });
+    } catch (error) {
+      console.error('Failed to get biometric data from Weaviate:', error);
+      
+      // Fallback to PostgreSQL for compatibility
+      try {
+        const rawData = await storage.getBiometricData(undefined, req.query.limit ? parseInt(req.query.limit as string) : 50);
+        const anonymizedStats = anonymizationService.generateAnonymizedStats(rawData);
+        res.json({ ...anonymizedStats, source: 'postgresql_fallback' });
+      } catch (fallbackError) {
+        res.status(500).json({ error: "Failed to fetch biometric statistics" });
+      }
+    }
+  });
+
+  // Get anonymized biometric time series for charts
+  app.get("/api/biometric/timeseries", async (req, res) => {
+    try {
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 100;
+      const maxPoints = req.query.maxPoints ? parseInt(req.query.maxPoints as string) : 20;
+      const rawData = await storage.getBiometricData(undefined, limit);
+      
+      // Generate anonymized time series data
+      const timeSeries = anonymizationService.generateAnonymizedTimeSeries(rawData, maxPoints);
+      res.json(timeSeries);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch biometric time series" });
+    }
+  });
+
+  // Get latest biometric reading - Weaviate-first approach
+  app.get("/api/biometric/latest", async (req, res) => {
+    try {
+      // Get latest from Weaviate
+      const { weaviateService } = await import('./services/weaviate.service.js');
+      const conversations = await weaviateService.searchConversations('biometric', 1);
+      
+      if (conversations.length > 0) {
+        const latest = conversations[0];
+        res.json({
+          heartRate: latest.heartRate,
+          hrv: latest.hrv,
+          stressLevel: latest.stressLevel,
+          attentionLevel: latest.attentionLevel,
+          cognitiveLoad: latest.cognitiveLoad,
+          timestamp: new Date(latest.timestamp),
+          effectiveness: latest.effectivenessScore,
+          source: 'weaviate_primary'
+        });
+      } else {
+        // Fallback to PostgreSQL if no data in Weaviate
+        const latest = await storage.getLatestBiometricData();
+        res.json({ ...latest, source: 'postgresql_fallback' });
+      }
+    } catch (error) {
+      console.error('Failed to get latest biometric data:', error);
+      res.status(500).json({ error: "Failed to get latest biometric data" });
+    }
+  });
+
+  // Store biometric data - Weaviate-first approach with PQC encryption
+  app.post("/api/biometric", authorizeBiometricAccess, validateBiometricData, auditLog('BIOMETRIC_DATA_STORE'), async (req, res) => {
+    try {
+      const userId = req.session?.userId || 1;
+      
+      // SECURITY FIX: Encrypt biometric data before storage using post-quantum cryptography
+      const encryptedBiometricData = await postQuantumEncryption.encryptBiometricData({
+        ...req.body,
+        timestamp: Date.now(),
+        userId
+      });
+      
+      // Store as NexisConversation in Weaviate (primary) with encrypted biometric data
+      const { weaviateService } = await import('./services/weaviate.service.js');
+      const conversationData = {
+        conversationId: `biometric_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        userId,
+        sessionId: `biometric_session_${Date.now()}`,
+        userMessage: 'Biometric data reading',
+        aiResponse: 'Biometric data processed and stored',
+        conversationType: 'biometric_reading',
+        effectivenessScore: 1.0,
+        responseStrategy: 'data_collection',
+        biometricState: {
+          encrypted: true,
+          encryptedData: encryptedBiometricData.data,
+          keyId: encryptedBiometricData.keyId,
+          algorithm: 'post-quantum-ml-kem-768',
+          timestamp: encryptedBiometricData.timestamp
+        },
+        neurodivergentMarkers: {
+          hyperfocusState: false,
+          contextSwitches: 0,
+          sensoryLoad: req.body.stressLevel || 0.5,
+          executiveFunction: Math.max(0, 1 - (req.body.stressLevel || 0.5)),
+          workingMemoryLoad: req.body.cognitiveLoad || 0.5,
+          attentionRegulation: req.body.attentionLevel || 0.6
+        },
+        environmentalContext: {
+          timeOfDay: getTimeOfDay(),
+          dayOfWeek: new Date().toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase(),
+          location: 'biometric_device',
+          soundLevel: 50,
+          lightLevel: 300,
+          temperature: 22,
+          humidity: 50,
+          airQuality: 80
+        },
+        conversationContext: 'Biometric data collection session',
+        timestamp: new Date().toISOString(),
+        learningMarkers: {
+          isBreakthrough: false,
+          cognitiveBreakthrough: false,
+          difficultyLevel: 1,
+          userSatisfaction: 1.0,
+          learningGoals: ['biometric_monitoring'],
+          skillAreas: ['health_tracking'],
+          knowledgeDomains: ['biometrics'],
+          adaptationNeeded: false,
+          followUpRequired: false
+        }
+      };
+
+      const conversationId = await weaviateService.storeConversation(conversationData);
+      
+      // Store encrypted reference in PostgreSQL for fallback compatibility
+      try {
+        const legacyData = {
+          heartRate: null, // Encrypted data - no plaintext values
+          hrv: null,
+          stressLevel: null,
+          attentionLevel: null,
+          cognitiveLoad: null,
+          deviceSource: 'weaviate_integration_encrypted',
+          timestamp: new Date(),
+          sessionId: null,
+          // Store encryption metadata for retrieval
+          encryptedData: encryptedBiometricData.data,
+          encryptionKeyId: encryptedBiometricData.keyId,
+          encryptionAlgorithm: 'post-quantum-ml-kem-768'
+        };
+        await storage.createBiometricData(legacyData);
+      } catch (pgError) {
+        console.warn('Failed to store legacy biometric data:', pgError);
+      }
+      
+      res.json({ 
+        id: conversationId,
+        success: true,
+        stored: 'weaviate_primary',
+        ...req.body 
+      });
+    } catch (error) {
+      console.error('Failed to store biometric data in Weaviate:', error);
+      res.status(500).json({ error: "Failed to store biometric data" });
+    }
+  });
+
+  // Get biometric statistics
+  app.get("/api/biometric/stats", async (req, res) => {
+    try {
+      const stats = await biometricService.getBiometricStats();
+      res.json(stats);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch biometric statistics" });
+    }
+  });
+
+  // Get device connections
+  app.get("/api/devices", async (req, res) => {
+    try {
+      const devices = await storage.getDeviceConnections();
+      res.json(devices);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch device connections" });
+    }
+  });
+
+  // Update device connection status
+  app.patch("/api/devices/:id", authorizeDeviceAccess, validateId('id'), validateDeviceConnection, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { connectionStatus } = req.body;
+      
+      const updated = await storage.updateDeviceConnection(id, { connectionStatus });
+      if (!updated) {
+        return res.status(404).json({ error: "Device not found" });
+      }
+      
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update device connection" });
+    }
+  });
+
+  // Vector Database API Endpoints
+  
+  // Store document in vector database
+  app.post("/api/vector/store", async (req, res) => {
+    try {
+      const document = req.body;
+      
+      // Record telemetry event
+      await analyticsService.recordEvent('user_interaction', {
+        action: 'store_document',
+        contentType: document.metadata.contentType,
+        size: document.content.length
+      }, {
+        userId: document.metadata.userId,
+        sessionId: document.metadata.sessionId
+      });
+
+      const documentId = await vectorDatabase.storeDocument(document);
+      
+      res.json({ 
+        success: true, 
+        documentId,
+        encrypted: document.metadata.contentType === 'biometric' || document.metadata.contentType === 'correlation'
+      });
+    } catch (error) {
+      console.error('Store document error:', error);
+      res.status(500).json({ 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Storage failed' 
+      });
+    }
+  });
+
+  // Semantic search
+  app.post("/api/vector/search", async (req, res) => {
+    try {
+      const { query, options = {} } = req.body;
+      
+      // Record search telemetry
+      await analyticsService.recordEvent('user_interaction', {
+        action: 'semantic_search',
+        query,
+        options
+      });
+
+      const results = await vectorDatabase.semanticSearch(query, options);
+      
+      res.json({ 
+        success: true, 
+        results,
+        count: results.length,
+        query
+      });
+    } catch (error) {
+      console.error('Search error:', error);
+      res.status(500).json({ 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Search failed' 
+      });
+    }
+  });
+
+  // Get cognitive correlations analysis
+  app.get("/api/analytics/correlations/:userId", async (req, res) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      const timeRange = {
+        start: parseInt(req.query.start as string) || Date.now() - (7 * 24 * 60 * 60 * 1000),
+        end: parseInt(req.query.end as string) || Date.now()
+      };
+
+      const analysis = await analyticsService.analyzeCognitiveCorrelations(userId, timeRange);
+      
+      res.json({ 
+        success: true, 
+        analysis,
+        timeRange
+      });
+    } catch (error) {
+      console.error('Correlation analysis error:', error);
+      res.status(500).json({ 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Analysis failed' 
+      });
+    }
+  });
+
+  // Get performance metrics
+  app.get("/api/analytics/performance", async (req, res) => {
+    try {
+      const userId = req.query.userId ? parseInt(req.query.userId as string) : undefined;
+      const timeRange = req.query.start && req.query.end ? {
+        start: parseInt(req.query.start as string),
+        end: parseInt(req.query.end as string)
+      } : undefined;
+
+      const metrics = await analyticsService.getPerformanceMetrics(userId, timeRange);
+      
+      res.json({ 
+        success: true, 
+        metrics
+      });
+    } catch (error) {
+      console.error('Performance metrics error:', error);
+      res.status(500).json({ 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Metrics calculation failed' 
+      });
+    }
+  });
+
+  // Weaviate Primary Service endpoints
+  app.get("/api/weaviate/status", async (req, res) => {
+    try {
+      const { weaviateService } = await import('./services/weaviate.service.js');
+      const stats = await weaviateService.getServiceStats();
+      res.json(stats);
+    } catch (error) {
+      console.error('Weaviate service status check failed:', error);
+      res.status(500).json({ error: "Status check failed" });
+    }
+  });
+
+  app.post("/api/weaviate/conversation", requireAuth, async (req, res) => {
+    try {
+      const { weaviateService } = await import('./services/weaviate.service.js');
+      const conversationData = req.body;
+      
+      // Generate IDs if not provided
+      conversationData.conversationId = conversationData.conversationId || `conv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      conversationData.sessionId = conversationData.sessionId || `sess_${Date.now()}`;
+      conversationData.timestamp = conversationData.timestamp || new Date().toISOString();
+      conversationData.userId = req.session.userId;
+
+      const result = await weaviateService.storeConversation(conversationData);
+      res.json({ success: true, conversationId: result });
+    } catch (error) {
+      console.error('Failed to store conversation in Weaviate:', error);
+      res.status(500).json({ error: "Failed to store conversation" });
+    }
+  });
+
+  app.get("/api/weaviate/conversations/search", requireAuth, async (req, res) => {
+    try {
+      const { weaviateService } = await import('./services/weaviate.service.js');
+      const { query, limit = 10 } = req.query;
+      
+      if (!query) {
+        return res.status(400).json({ error: "Query parameter required" });
+      }
+
+      const results = await weaviateService.searchConversations(query as string, parseInt(limit as string), req.session.userId);
+      res.json({ conversations: results });
+    } catch (error) {
+      console.error('Failed to search conversations:', error);
+      res.status(500).json({ error: "Failed to search conversations" });
+    }
+  });
+
+  app.post("/api/weaviate/conversations/biometric-search", requireAuth, async (req, res) => {
+    try {
+      const { weaviateService } = await import('./services/weaviate.service.js');
+      const { biometrics, limit = 10 } = req.body;
+      
+      if (!biometrics) {
+        return res.status(400).json({ error: "Biometrics data required" });
+      }
+
+      const results = await weaviateService.searchByBiometricState(biometrics, parseInt(limit), req.session.userId);
+      res.json({ conversations: results });
+    } catch (error) {
+      console.error('Failed to search by biometric state:', error);
+      res.status(500).json({ error: "Failed to search by biometric state" });
+    }
+  });
+
+  app.post("/api/weaviate/memory", requireAuth, async (req, res) => {
+    try {
+      const { weaviateService } = await import('./services/weaviate.service.js');
+      const memoryData = req.body;
+      
+      // Set user ID and defaults
+      memoryData.userId = req.session.userId;
+      memoryData.memoryId = memoryData.memoryId || `mem_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      memoryData.createdAt = memoryData.createdAt || new Date().toISOString();
+
+      const result = await weaviateService.storeMemory(memoryData);
+      res.json({ success: true, memoryId: result });
+    } catch (error) {
+      console.error('Failed to store memory:', error);
+      res.status(500).json({ error: "Failed to store memory" });
+    }
+  });
+
+  app.get("/api/weaviate/memories/search", requireAuth, async (req, res) => {
+    try {
+      const { weaviateService } = await import('./services/weaviate.service.js');
+      const { query, limit = 5 } = req.query;
+      
+      if (!query) {
+        return res.status(400).json({ error: "Query parameter required" });
+      }
+
+      const results = await weaviateService.searchMemories(query as string, req.session.userId, parseInt(limit as string));
+      res.json({ memories: results });
+    } catch (error) {
+      console.error('Failed to search memories:', error);
+      res.status(500).json({ error: "Failed to search memories" });
+    }
+  });
+
+  app.post("/api/weaviate/learn-patterns", requireAuth, async (req, res) => {
+    try {
+      const { weaviateService } = await import('./services/weaviate.service.js');
+      const patterns = await weaviateService.learnBiometricPatterns(req.session.userId);
+      res.json({ success: true, patternsLearned: patterns.length, patterns });
+    } catch (error) {
+      console.error('Failed to learn patterns:', error);
+      res.status(500).json({ error: "Failed to learn patterns" });
+    }
+  });
+
+  app.post("/api/weaviate/llm-context", requireAuth, async (req, res) => {
+    try {
+      const { weaviateService } = await import('./services/weaviate.service.js');
+      const { query, biometrics } = req.body;
+      
+      if (!query || !biometrics) {
+        return res.status(400).json({ error: "Query and biometrics required" });
+      }
+
+      const context = await weaviateService.buildLLMContext(query, biometrics, req.session.userId!);
+      res.json(context);
+    } catch (error) {
+      console.error('Failed to build LLM context:', error);
+      res.status(500).json({ error: "Failed to build LLM context" });
+    }
+  });
+
+  app.post("/api/weaviate/strategy", requireAuth, async (req, res) => {
+    try {
+      const { weaviateService } = await import('./services/weaviate.service.js');
+      const { biometrics } = req.body;
+      
+      if (!biometrics) {
+        return res.status(400).json({ error: "Biometrics required" });
+      }
+
+      const strategy = await weaviateService.getOptimalResponseStrategy(biometrics, req.session.userId!);
+      res.json({ strategy });
+    } catch (error) {
+      console.error('Failed to get optimal strategy:', error);
+      res.status(500).json({ error: "Failed to get optimal strategy" });
+    }
+  });
+
+  // RAG Service endpoints
+  app.post("/api/rag/generate", requireAuth, async (req, res) => {
+    try {
+      const { ragService } = await import('./services/rag.service.js');
+      const { query, biometrics } = req.body;
+      
+      if (!query || !biometrics) {
+        return res.status(400).json({ error: "Query and biometrics required" });
+      }
+
+      const userQuery = {
+        text: query,
+        intent: req.body.intent,
+        complexity: req.body.complexity || 'medium',
+        domain: req.body.domain
+      };
+
+      const response = await ragService.generateWithContext(userQuery, biometrics, req.session.userId!);
+      res.json(response);
+    } catch (error) {
+      console.error('Failed to generate RAG response:', error);
+      res.status(500).json({ error: "Failed to generate response" });
+    }
+  });
+
+  app.get("/api/rag/stats", async (req, res) => {
+    try {
+      const { ragService } = await import('./services/rag.service.js');
+      const stats = ragService.getStats();
+      res.json(stats);
+    } catch (error) {
+      console.error('Failed to get RAG stats:', error);
+      res.status(500).json({ error: "Failed to get RAG stats" });
+    }
+  });
+
+  // Migration endpoints
+  app.post("/api/migration/postgres-to-weaviate", requireAuth, async (req, res) => {
+    try {
+      const { migratePostgresToWeaviate } = await import('../migrations/postgres-to-weaviate.js');
+      const { dryRun = false, batchSize = 100 } = req.body;
+      
+      const stats = await migratePostgresToWeaviate({ dryRun, batchSize });
+      res.json({ success: true, stats });
+    } catch (error) {
+      console.error('Migration failed:', error);
+      res.status(500).json({ error: "Migration failed" });
+    }
+  });
+
+  // Rollback endpoints (Prompt 12)
+  app.post("/api/migration/rollback-to-postgres", requireAuth, async (req, res) => {
+    try {
+      const { rollbackToPostgreSQL } = await import('../migrations/rollback-to-postgres.js');
+      const { dryRun = false, batchSize = 50, preserveWeaviateData = true } = req.body;
+      
+      const stats = await rollbackToPostgreSQL({ dryRun, batchSize, preserveWeaviateData });
+      res.json({ success: true, stats });
+    } catch (error) {
+      console.error('Rollback failed:', error);
+      res.status(500).json({ error: "Rollback failed" });
+    }
+  });
+
+  // Emergency rollback endpoint
+  app.post("/api/migration/emergency-rollback", requireAuth, async (req, res) => {
+    try {
+      const { triggerRollback } = await import('../migrations/rollback-to-postgres.js');
+      const { preserveWeaviate = true } = req.body;
+      
+      const stats = await triggerRollback(preserveWeaviate);
+      res.json({ success: true, stats, message: "Emergency rollback completed" });
+    } catch (error) {
+      console.error('Emergency rollback failed:', error);
+      res.status(500).json({ error: "Emergency rollback failed" });
+    }
+  });
+
+  // Dual-write management endpoints
+  app.post("/api/migration/dual-write/enable", requireAuth, async (req, res) => {
+    try {
+      const { dualWriteManager } = await import('../migrations/rollback-to-postgres.js');
+      dualWriteManager.enable();
+      res.json({ success: true, message: "Dual-write mode enabled" });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to enable dual-write mode" });
+    }
+  });
+
+  app.post("/api/migration/dual-write/disable", requireAuth, async (req, res) => {
+    try {
+      const { dualWriteManager } = await import('../migrations/rollback-to-postgres.js');
+      dualWriteManager.disable();
+      res.json({ success: true, message: "Dual-write mode disabled" });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to disable dual-write mode" });
+    }
+  });
+
+  app.get("/api/migration/dual-write/status", requireAuth, async (req, res) => {
+    try {
+      const { dualWriteManager } = await import('../migrations/rollback-to-postgres.js');
+      const stats = dualWriteManager.getStats();
+      const enabled = dualWriteManager.isEnabled();
+      res.json({ enabled, stats });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get dual-write status" });
+    }
+  });
+
+  app.post("/api/migration/dual-write/verify", requireAuth, async (req, res) => {
+    try {
+      const { dualWriteManager } = await import('../migrations/rollback-to-postgres.js');
+      const stats = await dualWriteManager.verifyConsistency();
+      res.json({ success: true, stats });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to verify consistency" });
+    }
+  });
+
+  // Training Export endpoints
+  app.post("/api/training-export/start", requireAuth, async (req, res) => {
+    try {
+      const { trainingExportService } = await import('./services/training-export.service.js');
+      const config = req.body;
+      
+      const jobId = await trainingExportService.startExport(config);
+      res.json({ success: true, jobId });
+    } catch (error) {
+      console.error('Failed to start training export:', error);
+      res.status(500).json({ error: "Failed to start training export" });
+    }
+  });
+
+  app.get("/api/training-export/jobs", async (req, res) => {
+    try {
+      const { trainingExportService } = await import('./services/training-export.service.js');
+      const jobs = trainingExportService.getAllJobs();
+      res.json(jobs);
+    } catch (error) {
+      console.error('Failed to get export jobs:', error);
+      res.status(500).json({ error: "Failed to get export jobs" });
+    }
+  });
+
+  app.get("/api/training-export/job/:jobId", async (req, res) => {
+    try {
+      const { trainingExportService } = await import('./services/training-export.service.js');
+      const job = trainingExportService.getJobStatus(req.params.jobId);
+      
+      if (!job) {
+        return res.status(404).json({ error: "Job not found" });
+      }
+      
+      res.json(job);
+    } catch (error) {
+      console.error('Failed to get job status:', error);
+      res.status(500).json({ error: "Failed to get job status" });
+    }
+  });
+
+  // Vector database statistics
+  app.get("/api/vector/stats", async (req, res) => {
+    try {
+      const stats = vectorDatabase.getStats();
+      
+      res.json({ 
+        success: true, 
+        stats
+      });
+    } catch (error) {
+      console.error('Stats error:', error);
+      res.status(500).json({ 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Stats retrieval failed' 
+      });
+    }
+  });
+
+  // Cloud export operations
+  app.post("/api/cloud/export/:type", async (req, res) => {
+    try {
+      const type = req.params.type as 'compression' | 'backup';
+      
+      if (type !== 'compression' && type !== 'backup') {
+        return res.status(400).json({ 
+          success: false, 
+          error: 'Invalid export type. Must be "compression" or "backup"' 
+        });
+      }
+
+      const jobId = await cloudExportService.triggerManualExport(type);
+      
+      res.json({ 
+        success: true, 
+        jobId,
+        type
+      });
+    } catch (error) {
+      console.error('Cloud export error:', error);
+      res.status(500).json({ 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Export failed' 
+      });
+    }
+  });
+
+  // Get system status
+  app.get("/api/system/status", async (req, res) => {
+    try {
+      const status = cloudExportService.getSystemStatus();
+      const encryptionKeyId = postQuantumEncryption.getCurrentKeyId();
+      
+      res.json({ 
+        success: true, 
+        status: {
+          ...status,
+          encryption: {
+            currentKeyId: encryptionKeyId,
+            algorithm: 'post-quantum-resistant'
+          },
+          timestamp: Date.now()
+        }
+      });
+    } catch (error) {
+      console.error('System status error:', error);
+      res.status(500).json({ 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Status retrieval failed' 
+      });
+    }
+  });
+
+  // GDPR Compliance Endpoints
+  
+  // Record consent for biometric data processing
+  app.post("/api/gdpr/consent", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session!.userId!;
+      const { consentType, purpose, legalBasis, dataCategories, retentionPeriod } = req.body;
+      
+      if (!consentType || !purpose || !legalBasis || !dataCategories || !retentionPeriod) {
+        return res.status(400).json({ error: "Missing required consent parameters" });
+      }
+      
+      const consent = await gdprService.recordConsent(
+        userId,
+        consentType,
+        purpose,
+        legalBasis,
+        dataCategories,
+        retentionPeriod,
+        req.ip || 'unknown',
+        req.get('User-Agent') || 'unknown'
+      );
+      
+      res.status(201).json({ success: true, consent });
+    } catch (error) {
+      console.error('Consent recording error:', error);
+      res.status(500).json({ error: "Failed to record consent" });
+    }
+  });
+
+  // Get user's consent status
+  app.get("/api/gdpr/consent", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session!.userId!;
+      const status = gdprService.getConsentStatus(userId);
+      res.json({ success: true, consents: status });
+    } catch (error) {
+      console.error('Consent status error:', error);
+      res.status(500).json({ error: "Failed to retrieve consent status" });
+    }
+  });
+
+  // Revoke consent
+  app.delete("/api/gdpr/consent/:id", requireAuth, validateId('id'), async (req, res) => {
+    try {
+      const userId = req.session!.userId!;
+      const consentId = parseInt(req.params.id);
+      
+      const success = await gdprService.revokeConsent(consentId, userId);
+      if (!success) {
+        return res.status(404).json({ error: "Consent not found or access denied" });
+      }
+      
+      res.json({ success: true, message: "Consent revoked successfully" });
+    } catch (error) {
+      console.error('Consent revocation error:', error);
+      res.status(500).json({ error: "Failed to revoke consent" });
+    }
+  });
+
+  // Submit data subject request
+  app.post("/api/gdpr/request", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session!.userId!;
+      const { requestType, reason } = req.body;
+      
+      if (!requestType || !['access', 'portability', 'erasure', 'rectification', 'restriction'].includes(requestType)) {
+        return res.status(400).json({ error: "Invalid request type" });
+      }
+      
+      const request = await gdprService.submitDataSubjectRequest(userId, requestType, reason);
+      res.status(201).json({ success: true, request });
+    } catch (error) {
+      console.error('Data subject request error:', error);
+      res.status(500).json({ error: "Failed to submit request" });
+    }
+  });
+
+  // Get user's data subject requests
+  app.get("/api/gdpr/requests", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session!.userId!;
+      const requests = gdprService.getDataSubjectRequests(userId);
+      res.json({ success: true, requests });
+    } catch (error) {
+      console.error('Data subject requests retrieval error:', error);
+      res.status(500).json({ error: "Failed to retrieve requests" });
+    }
+  });
+
+  // Export user data (GDPR Article 20 - Data portability)
+  app.get("/api/gdpr/export", requireAuth, auditLog('GDPR_DATA_EXPORT'), async (req, res) => {
+    try {
+      const userId = req.session!.userId!;
+      const userData = await gdprService.exportUserData(userId);
+      
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Content-Disposition', `attachment; filename="user-data-${userId}-${new Date().toISOString().split('T')[0]}.json"`);
+      res.json({ success: true, userData });
+    } catch (error) {
+      console.error('Data export error:', error);
+      res.status(500).json({ error: "Failed to export user data" });
+    }
+  });
+
+  return httpServer;
+}

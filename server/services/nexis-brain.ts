@@ -50,6 +50,8 @@ export interface LLMContext {
 
 export class NexisBrain {
   private weaviateClient: any;
+  private isInitialized: boolean = false;
+  private initializationError: Error | null = null;
 
   constructor() {
     // Will be set during initialization
@@ -67,11 +69,35 @@ export class NexisBrain {
       
       await this.createNexisSchemas();
       console.log('Nexis Brain initialized with Weaviate schemas');
+      this.isInitialized = true;
     } catch (error) {
       console.error('Failed to initialize Nexis Brain:', error);
       this.weaviateClient = null;
-      // Don't throw to allow rest of app to work
+      this.isInitialized = false;
+      this.initializationError = error instanceof Error ? error : new Error('Unknown initialization error');
+      // Re-throw for fail-fast behavior - services that depend on Nexis should handle this
+      throw this.initializationError;
     }
+  }
+
+  /**
+   * Check if the service is properly initialized
+   */
+  private ensureInitialized(): void {
+    if (!this.isInitialized) {
+      if (this.initializationError) {
+        throw new Error(`NexisBrain service failed to initialize: ${this.initializationError.message}`);
+      } else {
+        throw new Error('NexisBrain service is not initialized. Call initialize() first.');
+      }
+    }
+  }
+
+  /**
+   * Check if the service is ready for use
+   */
+  isReady(): boolean {
+    return this.isInitialized && this.weaviateClient !== null;
   }
 
   /**
@@ -332,6 +358,7 @@ export class NexisBrain {
    * Store a conversation with full biometric and contextual data
    */
   async storeConversation(conversationData: ConversationData): Promise<string> {
+    this.ensureInitialized();
     try {
       const properties = {
         conversationId: conversationData.id,
@@ -374,6 +401,7 @@ export class NexisBrain {
    * Retrieve relevant context for intelligent responses
    */
   async getRelevantContext(query: string, currentBiometrics: any): Promise<any> {
+    this.ensureInitialized();
     try {
       // Semantic search for similar conversations
       const semanticResults = await this.weaviateClient.graphql
@@ -442,6 +470,7 @@ export class NexisBrain {
    * Learn and store biometric patterns from historical data
    */
   async learnBiometricPatterns(): Promise<void> {
+    this.ensureInitialized();
     try {
       // Get high-effectiveness conversations for pattern learning
       const conversations = await this.weaviateClient.graphql
@@ -755,3 +784,4 @@ export class NexisBrain {
 }
 
 export const nexisBrain = new NexisBrain();
+export const nexisBrainService = nexisBrain;

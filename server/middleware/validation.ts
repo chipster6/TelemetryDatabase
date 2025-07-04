@@ -154,9 +154,9 @@ export const commonSchemas = {
 // Request sanitization
 export function sanitizeInput(input: any): any {
   if (typeof input === 'string') {
-    // Remove potentially dangerous characters
+    // Remove potentially dangerous characters (ReDoS safe regex patterns)
     return input
-      .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+      .replace(/<script[\s\S]*?<\/script>/gi, '') // Fixed ReDoS vulnerability
       .replace(/javascript:/gi, '')
       .replace(/data:/gi, '')
       .replace(/vbscript:/gi, '')
@@ -170,8 +170,14 @@ export function sanitizeInput(input: any): any {
   if (input && typeof input === 'object') {
     const sanitized: any = {};
     for (const [key, value] of Object.entries(input)) {
-      // Prevent prototype pollution
-      if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+      // Comprehensive prototype pollution protection
+      if (key === '__proto__' || 
+          key === 'constructor' || 
+          key === 'prototype' ||
+          key.includes('__proto__') ||
+          key.includes('constructor') ||
+          key.includes('prototype')) {
+        console.warn(`Blocked potentially dangerous key: ${key}`);
         continue;
       }
       sanitized[key] = sanitizeInput(value);
@@ -284,8 +290,18 @@ export const validatePagination = validateRequest(commonSchemas.pagination, 'que
 
 // CSRF protection middleware
 export function csrfProtection(req: Request, res: Response, next: NextFunction) {
-  // Skip CSRF for GET requests and API endpoints that don't modify state
-  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
+  // SECURITY FIX: Only skip CSRF for safe methods and non-state-changing GET requests
+  if (req.method === 'HEAD' || req.method === 'OPTIONS') {
+    return next();
+  }
+  
+  // Check for state-changing GET requests that need CSRF protection
+  const stateChangingGetPaths = ['/api/logout', '/api/delete', '/api/clear'];
+  const isStateChangingGet = req.method === 'GET' && 
+    stateChangingGetPaths.some(path => req.path.includes(path));
+  
+  // Skip CSRF only for non-state-changing GET requests
+  if (req.method === 'GET' && !isStateChangingGet) {
     return next();
   }
   

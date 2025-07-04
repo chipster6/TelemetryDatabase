@@ -813,6 +813,120 @@ export class WeaviatePrimaryStorage {
       return { initialized: false, error: error.message };
     }
   }
+  
+  // ==================== Service Management Methods ====================
+  
+  /**
+   * Get storage manager instance
+   */
+  getStorageManager(): StorageManager {
+    return this.storageManager;
+  }
+  
+  /**
+   * Get backup service instance
+   */
+  getBackupService(): BackupService {
+    return this.backupService;
+  }
+  
+  /**
+   * Get lifecycle manager instance
+   */
+  getLifecycleManager(): LifecycleManager {
+    return this.lifecycleManager;
+  }
+  
+  /**
+   * Get migration service instance
+   */
+  getMigrationService(): MigrationService {
+    return this.migrationService;
+  }
+  
+  /**
+   * Create backup of specific class
+   */
+  async createBackup(className: string): Promise<string> {
+    const metadata = await this.backupService.createBackup(className);
+    return metadata.id;
+  }
+  
+  /**
+   * Execute data lifecycle management
+   */
+  async executeLifecycleManagement(): Promise<any> {
+    return await this.lifecycleManager.executeLifecycleManagement();
+  }
+  
+  /**
+   * Get data usage statistics
+   */
+  async getDataUsageStats(): Promise<any> {
+    return await this.lifecycleManager.getDataUsageStats();
+  }
+  
+  /**
+   * Export data to external format
+   */
+  async exportData(className: string, format: 'json' | 'csv' = 'json'): Promise<any> {
+    return await this.backupService.exportData(className, format);
+  }
+  
+  // ==================== Private Methods ====================
+  
+  /**
+   * Setup event handlers for component communication
+   */
+  private setupEventHandlers(): void {
+    // Storage Manager events
+    this.storageManager.on('documentStored', (event) => {
+      console.log(`Document stored: ${event.className} (${event.storageTime}ms)`);
+    });
+    
+    this.storageManager.on('storageError', (event) => {
+      console.error('Storage error:', event.error.message);
+    });
+    
+    // Backup Service events
+    this.backupService.on('backupCreated', (event) => {
+      console.log(`Backup created: ${event.backupId} for ${event.className}`);
+    });
+    
+    this.backupService.on('backupFailed', (event) => {
+      console.error(`Backup failed for ${event.className}:`, event.error.message);
+    });
+    
+    // Lifecycle Manager events
+    this.lifecycleManager.on('recordsArchived', (event) => {
+      console.log(`Records archived: ${event.archived} from ${event.className}`);
+    });
+    
+    this.lifecycleManager.on('recordsDeleted', (event) => {
+      console.log(`Records deleted: ${event.deleted} from ${event.className}`);
+    });
+    
+    // Migration Service events
+    this.migrationService.on('migrationCompleted', (event) => {
+      console.log(`Migration completed: ${event.migrationId}`);
+    });
+    
+    this.migrationService.on('migrationFailed', (event) => {
+      console.error(`Migration failed: ${event.migrationId}`, event.error.message);
+    });
+  }
+  
+  /**
+   * Graceful shutdown
+   */
+  async shutdown(): Promise<void> {
+    await Promise.all([
+      this.storageManager.shutdown(),
+      this.backupService.shutdown(),
+      this.lifecycleManager.shutdown(),
+      this.migrationService.shutdown()
+    ]);
+  }
 }
 
 export const weaviatePrimaryStorage = new WeaviatePrimaryStorage();

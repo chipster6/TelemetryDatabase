@@ -15,22 +15,56 @@ name = "biometric-telemetry-preview"
 NODE_ENV = "production"
 REAL_CRYSTALS_KYBER_ENABLED = "true"
 QUANTUM_RESISTANT_ENCRYPTION = "true"
+# Security configuration
+CORS_ALLOWED_ORIGINS = "https://biometric-telemetry.pages.dev,https://yourdomain.com"
+WEBAUTHN_RP_ID = "biometric-telemetry.pages.dev"
+WEBAUTHN_ORIGIN = "https://biometric-telemetry.pages.dev"
+BCRYPT_ROUNDS = "14"
+BIOMETRIC_SESSION_TIMEOUT = "1800"
+BIOMETRIC_MAX_SESSIONS = "2"
+BIOMETRIC_RETENTION_DAYS = "90"
+LOG_LEVEL = "info"
+ENABLE_STRUCTURED_LOGGING = "true"
+FORCE_HTTPS = "true"
+HSTS_MAX_AGE = "31536000"
+ENABLE_COMPRESSION = "true"
+CACHE_MAX_AGE = "3600"
 
 [env.preview.vars]
-NODE_ENV = "development"
+NODE_ENV = "staging"
 REAL_CRYSTALS_KYBER_ENABLED = "true"
 QUANTUM_RESISTANT_ENCRYPTION = "true"
+# Preview/staging security configuration
+CORS_ALLOWED_ORIGINS = "https://biometric-telemetry-preview.pages.dev"
+WEBAUTHN_RP_ID = "biometric-telemetry-preview.pages.dev"
+WEBAUTHN_ORIGIN = "https://biometric-telemetry-preview.pages.dev"
+BCRYPT_ROUNDS = "12"
+BIOMETRIC_SESSION_TIMEOUT = "3600"
+BIOMETRIC_MAX_SESSIONS = "3"
+BIOMETRIC_RETENTION_DAYS = "30"
+LOG_LEVEL = "debug"
+ENABLE_STRUCTURED_LOGGING = "false"
 
 # Secure secrets (set via Wrangler CLI)
 # These will be encrypted by Cloudflare
-# Use: wrangler secret put <SECRET_NAME>
+# Use: wrangler secret put <SECRET_NAME> --env production
+#      wrangler secret put <SECRET_NAME> --env preview
 #
-# Required secrets:
-# - SESSION_SECRET (random string for session security)
-# - WEAVIATE_URL (your Weaviate cluster URL)
-# - WEAVIATE_API_KEY (your Weaviate API key)
-# - PROMPT_USERNAME (admin username)
-# - PROMPT_PASSWORD (admin password)
+# Required secrets for PRODUCTION:
+# - SESSION_SECRET (128-char high-entropy string)
+# - WEAVIATE_URL (your production Weaviate cluster URL)
+# - WEAVIATE_API_KEY (your production Weaviate API key)
+# - PROMPT_USERNAME (production admin username)
+# - PROMPT_PASSWORD (production admin password - use OAuth instead if possible)
+# - ADMIN_OAUTH_CLIENT_ID (OAuth client ID for admin auth)
+# - ADMIN_OAUTH_CLIENT_SECRET (OAuth client secret)
+#
+# Required secrets for PREVIEW:
+# - SESSION_SECRET (128-char high-entropy string)
+# - WEAVIATE_URL (your staging/preview Weaviate cluster URL)  
+# - WEAVIATE_API_KEY (your staging/preview Weaviate API key)
+# - PROMPT_USERNAME (staging admin username)
+# - PROMPT_PASSWORD (staging admin password)
 
 # D1 Database binding for biometric data storage
 [[env.production.d1_databases]]

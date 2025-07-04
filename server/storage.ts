@@ -22,6 +22,7 @@ import { postQuantumEncryption } from './services/encryption.js';
 import { db } from './db.js';
 import { eq } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
+import { ConfigurationManager } from './config/ConfigurationManager';
 
 export interface IStorage {
   // User methods
@@ -265,9 +266,10 @@ export class MemStorage implements IStorage {
 
   async createUser(insertUser: InsertUser): Promise<User> {
     const id = this.currentId++;
-    // Hash the password before storing
-    const hashedPassword = await bcrypt.hash(insertUser.password, 10);
-    const user: User = { ...insertUser, password: hashedPassword, id };
+    const config = ConfigurationManager.getInstance();
+    const bcryptRounds = config.get<number>('security.bcryptRounds');
+    const hashedPassword = await bcrypt.hash(insertUser.password, bcryptRounds);
+    const user: User = { ...insertUser, password: hashedPassword, id, role: 'user' };
     this.users.set(id, user);
     return user;
   }
@@ -506,8 +508,9 @@ export class DatabaseStorage implements IStorage {
     const existingUser = await this.getUserByUsername(username);
     if (existingUser) return;
 
-    // Hash the password and create the admin user
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const config = ConfigurationManager.getInstance();
+    const bcryptRounds = config.get<number>('security.bcryptRounds');
+    const hashedPassword = await bcrypt.hash(password, bcryptRounds);
     await this.createUser({
       username,
       password: hashedPassword,

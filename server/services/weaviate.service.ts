@@ -4,8 +4,13 @@
  */
 
 import { vectorDatabase } from './vector-database.js';
-// Dynamic import will be used for schema functions
+import { WeaviateClientManager } from './weaviate/WeaviateClientManager.js';
+import { SchemaManager } from './weaviate/SchemaManager.js';
+import { SearchIndexer } from './weaviate/SearchIndexer.js';
+import { CompressionService } from './weaviate/CompressionService.js';
+import { DataExporter } from './weaviate/DataExporter.js';
 import type { BiometricData } from '../../shared/schema.js';
+import type { WeaviateClient } from 'weaviate-client';
 
 export interface ConversationData {
   conversationId: string;
@@ -137,14 +142,19 @@ export interface LLMContext {
 }
 
 export class WeaviateService {
-  private weaviateClient: any;
+  private clientManager: WeaviateClientManager;
+  private schemaManager: SchemaManager;
+  private searchIndexer: SearchIndexer;
+  private compressionService: CompressionService;
+  private dataExporter: DataExporter;
   private initialized = false;
   private healthStatus = 'unknown';
   private lastHealthCheck = 0;
   private readonly HEALTH_CHECK_INTERVAL = 30000; // 30 seconds
 
   constructor() {
-    this.weaviateClient = null;
+    this.clientManager = new WeaviateClientManager();
+    // Other services will be initialized after client is ready
   }
 
   /**
@@ -152,26 +162,25 @@ export class WeaviateService {
    */
   async initialize(): Promise<void> {
     try {
-      // Get Weaviate client
-      this.weaviateClient = vectorDatabase.getClient();
+      // Initialize client manager
+      await this.clientManager.initialize();
       
-      if (!this.weaviateClient) {
-        throw new Error('Weaviate client not available - check WEAVIATE_URL and WEAVIATE_API_KEY');
-      }
-
-      // Test connection
-      await this.checkHealth();
+      const client = this.clientManager.getClient();
       
-      if (this.healthStatus !== 'healthy') {
-        throw new Error('Weaviate health check failed');
-      }
+      // Initialize all specialized services
+      this.schemaManager = new SchemaManager(client);
+      this.searchIndexer = new SearchIndexer(client);
+      this.compressionService = new CompressionService(client);
+      this.dataExporter = new DataExporter(client);
 
-      // Initialize schema dynamically
-      const { initializeWeaviateSchema } = await import('../weaviate/schema.js');
-      await initializeWeaviateSchema(this.weaviateClient);
+      // Initialize schema
+      await this.schemaManager.initializeSchema();
       
       this.initialized = true;
-      console.log('✓ Weaviate service initialized as primary data store');
+      this.healthStatus = 'healthy';
+      this.lastHealthCheck = Date.now();
+      
+      console.log('✓ Weaviate service initialized as primary data store with specialized services');
       
       // Start periodic health checks
       this.startHealthMonitoring();
@@ -179,7 +188,6 @@ export class WeaviateService {
     } catch (error) {
       console.error('Failed to initialize Weaviate service:', error);
       this.healthStatus = 'error';
-      this.weaviateClient = null;
       // Don't throw to allow rest of app to work
     }
   }
@@ -194,19 +202,20 @@ export class WeaviateService {
     if (now - this.lastHealthCheck < this.HEALTH_CHECK_INTERVAL && this.healthStatus === 'healthy') {
       return true;
     }
-
-    try {
-      const health = await this.weaviateClient.misc.liveChecker().do();
-      const meta = await this.weaviateClient.misc.metaGetter().do();
-      
-      this.healthStatus = 'healthy';
+    
+    if (!this.clientManager || !this.clientManager.isInitialized()) {
+      this.healthStatus = 'error';
       this.lastHealthCheck = now;
-      
-      console.log(`Weaviate health check: OK (version: ${meta.version})`);
-      return true;
-      
+      return false;
+    }
+    
+    try {
+      const isHealthy = await this.clientManager.checkHealth();
+      this.healthStatus = isHealthy ? 'healthy' : 'error';
+      this.lastHealthCheck = now;
+      return isHealthy;
     } catch (error) {
-      console.error('Weaviate health check failed:', error);
+      console.error('Health check failed:', error);
       this.healthStatus = 'error';
       this.lastHealthCheck = now;
       return false;
@@ -220,6 +229,106 @@ export class WeaviateService {
     setInterval(async () => {
       await this.checkHealth();
     }, this.HEALTH_CHECK_INTERVAL);
+  }
+  
+  /**
+   * Get the Weaviate client
+   */
+  getClient(): WeaviateClient {
+    if (!this.clientManager || !this.clientManager.isInitialized()) {
+      throw new Error('Weaviate service not initialized');
+    }
+    return this.clientManager.getClient();
+  }
+
+  /**
+   * Search conversations using SearchIndexer
+   */
+  async searchConversations(query: string, limit: number = 10, userId?: number): Promise<any[]> {
+    if (!this.searchIndexer) {
+      throw new Error('Search service not initialized');
+    }
+    return this.searchIndexer.searchConversations(query, limit);
+  }
+
+  /**
+   * Search memories using SearchIndexer
+   */
+  async searchMemories(query: string, userId?: number, memoryType?: string): Promise<any[]> {
+    if (!this.searchIndexer) {
+      throw new Error('Search service not initialized');
+    }
+    return this.searchIndexer.searchMemories(query, userId, memoryType);
+  }
+
+  /**
+   * Perform semantic search
+   */
+  async semanticSearch(query: string, options: any = {}): Promise<any[]> {
+    if (!this.searchIndexer) {
+      throw new Error('Search service not initialized');
+    }
+    return this.searchIndexer.semanticSearch(query, options);
+  }
+
+  /**
+   * Perform hybrid search
+   */
+  async hybridSearch(options: any): Promise<any[]> {
+    if (!this.searchIndexer) {
+      throw new Error('Search service not initialized');
+    }
+    return this.searchIndexer.hybridSearch(options);
+  }
+
+  /**
+   * Check if schema exists
+   */
+  async schemaExists(className: string): Promise<boolean> {
+    if (!this.schemaManager) {
+      throw new Error('Schema service not initialized');
+    }
+    return this.schemaManager.schemaExists(className);
+  }
+
+  /**
+   * Export conversations
+   */
+  async exportConversations(options: any): Promise<any> {
+    if (!this.dataExporter) {
+      throw new Error('Export service not initialized');
+    }
+    return this.dataExporter.exportConversations(options);
+  }
+
+  /**
+   * Export memories
+   */
+  async exportMemories(options: any): Promise<any> {
+    if (!this.dataExporter) {
+      throw new Error('Export service not initialized');
+    }
+    return this.dataExporter.exportMemories(options);
+  }
+
+  /**
+   * Compress conversation data
+   */
+  async compressConversations(conversations: ConversationData[], options: any = {}): Promise<any> {
+    if (!this.compressionService) {
+      throw new Error('Compression service not initialized');
+    }
+    return this.compressionService.compressConversations(conversations, options);
+  }
+
+  /**
+   * Create data summary
+   */
+  async createDataSummary(data: ConversationData[] | Memory[]): Promise<any> {
+    if (!this.compressionService) {
+      throw new Error('Compression service not initialized');
+    }
+    return this.compressionService.createDataSummary(data);
   }
 
   /**
@@ -287,9 +396,10 @@ export class WeaviateService {
         followUpRequired: data.learningMarkers.followUpRequired
       };
 
-      const result = await this.weaviateClient.data
+      const client = this.getClient();
+      const result = await client.data
         .creator()
-        .withClassName('NexisConversation')
+        .withClassName('Conversation')
         .withProperties(properties)
         .do();
 
@@ -307,9 +417,10 @@ export class WeaviateService {
    */
   async getConversation(id: string): Promise<any> {
     try {
-      const result = await this.weaviateClient.data
+      const client = this.getClient();
+      const result = await client.data
         .getterById()
-        .withClassName('NexisConversation')
+        .withClassName('Conversation')
         .withId(id)
         .do();
 
@@ -322,50 +433,12 @@ export class WeaviateService {
   }
 
   /**
-   * Search conversations with semantic similarity
+   * Legacy search conversations method - delegated to SearchIndexer
+   * This method is kept for backwards compatibility
    */
-  async searchConversations(query: string, limit: number = 10, userId?: number): Promise<any[]> {
-    try {
-      let whereFilter;
-      
-      if (userId) {
-        whereFilter = {
-          path: ['userId'],
-          operator: 'Equal',
-          valueInt: userId
-        };
-      }
-
-      const result = await this.weaviateClient.graphql
-        .get()
-        .withClassName('NexisConversation')
-        .withFields(`
-          conversationId
-          userMessage
-          aiResponse
-          effectivenessScore
-          responseStrategy
-          heartRate
-          stressLevel
-          attentionLevel
-          cognitiveLoad
-          flowState
-          timeOfDay
-          isBreakthrough
-          userSatisfaction
-          timestamp
-        `)
-        .withNearText({ concepts: [query] })
-        .withWhere(whereFilter)
-        .withLimit(limit)
-        .do();
-
-      return result?.data?.Get?.NexisConversation || [];
-      
-    } catch (error) {
-      console.error('Failed to search conversations:', error);
-      return [];
-    }
+  async searchConversationsOld(query: string, limit: number = 10, userId?: number): Promise<any[]> {
+    // Delegate to the new SearchIndexer service
+    return this.searchConversations(query, limit, userId);
   }
 
   /**
@@ -388,9 +461,10 @@ export class WeaviateService {
         whereConditions.push({ path: ['userId'], operator: 'Equal', valueInt: userId });
       }
 
-      const result = await this.weaviateClient.graphql
+      const client = this.getClient();
+      const result = await client.graphql
         .get()
-        .withClassName('NexisConversation')
+        .withClassName('Conversation')
         .withFields(`
           conversationId
           userMessage
@@ -413,7 +487,7 @@ export class WeaviateService {
         .withLimit(limit)
         .do();
 
-      return result?.data?.Get?.NexisConversation || [];
+      return result?.data?.Get?.Conversation || [];
       
     } catch (error) {
       console.error('Failed to search by biometric state:', error);
@@ -444,7 +518,7 @@ export class WeaviateService {
         formationBiometrics: memory.formationBiometrics || {}
       };
 
-      const result = await this.weaviateClient.data
+      const result = await this.getClient().data
         .creator()
         .withClassName('NexisMemoryNode')
         .withProperties(properties)
@@ -474,7 +548,7 @@ export class WeaviateService {
         };
       }
 
-      const result = await this.weaviateClient.graphql
+      const result = await this.getClient().graphql
         .get()
         .withClassName('NexisMemoryNode')
         .withFields(`
@@ -542,7 +616,7 @@ export class WeaviateService {
         whereConditions.push({ path: ['userId'], operator: 'Equal', valueInt: userId });
       }
 
-      const conversations = await this.weaviateClient.graphql
+      const conversations = await this.getClient().graphql
         .get()
         .withClassName('NexisConversation')
         .withFields(`
@@ -730,7 +804,7 @@ export class WeaviateService {
         createdAt: new Date().toISOString()
       };
 
-      await this.weaviateClient.data
+      await this.getClient().data
         .creator()
         .withClassName('NexisBiometricPattern')
         .withProperties(properties)
@@ -749,7 +823,7 @@ export class WeaviateService {
   async getOptimalResponseStrategy(biometrics: BiometricSnapshot, userId?: number): Promise<Strategy> {
     try {
       // Find matching biometric patterns
-      const patterns = await this.weaviateClient.graphql
+      const patterns = await this.getClient().graphql
         .get()
         .withClassName('NexisBiometricPattern')
         .withFields(`
@@ -1106,10 +1180,11 @@ export class WeaviateService {
    */
   async getServiceStats(): Promise<any> {
     try {
+      const client = this.getClient();
       const [conversationStats, memoryStats, patternStats, schemaStats] = await Promise.all([
-        this.weaviateClient.graphql.aggregate().withClassName('NexisConversation').withFields('meta { count }').do(),
-        this.weaviateClient.graphql.aggregate().withClassName('NexisMemoryNode').withFields('meta { count }').do(),
-        this.weaviateClient.graphql.aggregate().withClassName('NexisBiometricPattern').withFields('meta { count }').do(),
+        client.graphql.aggregate().withClassName('Conversation').withFields('meta { count }').do(),
+        client.graphql.aggregate().withClassName('Memory').withFields('meta { count }').do(),
+        client.graphql.aggregate().withClassName('BiometricPattern').withFields('meta { count }').do(),
         this.getSchemaStatsInternal()
       ]);
 
@@ -1121,9 +1196,9 @@ export class WeaviateService {
         dataStore: 'weaviate_first',
         
         // Data counts
-        conversations: conversationStats?.data?.Aggregate?.NexisConversation?.[0]?.meta?.count || 0,
-        memories: memoryStats?.data?.Aggregate?.NexisMemoryNode?.[0]?.meta?.count || 0,
-        patterns: patternStats?.data?.Aggregate?.NexisBiometricPattern?.[0]?.meta?.count || 0,
+        conversations: conversationStats?.data?.Aggregate?.Conversation?.[0]?.meta?.count || 0,
+        memories: memoryStats?.data?.Aggregate?.Memory?.[0]?.meta?.count || 0,
+        patterns: patternStats?.data?.Aggregate?.BiometricPattern?.[0]?.meta?.count || 0,
         
         // Schema info
         schema: schemaStats,
@@ -1171,8 +1246,11 @@ export class WeaviateService {
    */
   private async getSchemaStatsInternal(): Promise<any> {
     try {
-      const { getSchemaStats } = await import('../weaviate/schema.js');
-      return await getSchemaStats(this.weaviateClient);
+      if (!this.schemaManager) {
+        throw new Error('Schema manager not initialized');
+      }
+      const classes = await this.schemaManager.listClasses();
+      return { classes, count: classes.length };
     } catch (error) {
       console.error('Failed to get schema stats:', error);
       return { error: (error as Error).message };

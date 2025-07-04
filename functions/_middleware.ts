@@ -123,7 +123,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   } catch (error) {
     console.error('🚨 Middleware error:', error);
     
-    // Log security incident
+    // Log security incident without exposing error details
     if (env.SECURITY_ANALYTICS) {
       const errorDatapoint = {
         doubles: {
@@ -134,7 +134,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
           errorType: 'middleware_error',
           method: request.method,
           path: url.pathname,
-          error: error instanceof Error ? error.message : 'unknown_error',
+          error: 'internal_server_error', // Generic error message
           quantumProtected: env.REAL_CRYSTALS_KYBER_ENABLED === 'true' ? 'yes' : 'no',
         },
       };

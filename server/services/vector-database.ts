@@ -1,9 +1,11 @@
-import weaviate, { WeaviateClient, ApiKey } from 'weaviate-ts-client';
 import { postQuantumEncryption, EncryptedData } from './encryption.js';
 import { VectorDocument } from '../../shared/schema.js';
 import * as zlib from 'zlib';
 import { promisify } from 'util';
 import { v4 as uuidv4 } from 'uuid';
+import { ConfigurationManager } from '../config/ConfigurationManager';
+import { weaviateClient } from './weaviate-client';
+import type { WeaviateClient } from 'weaviate-client';
 
 const gzip = promisify(zlib.gzip);
 const gunzip = promisify(zlib.gunzip);
@@ -28,7 +30,7 @@ export interface ShardInfo {
 
 export class WeaviateVectorDatabase {
   private client?: WeaviateClient;
-  private className = 'PromptDocument';
+  private className: string;
   private isInitialized = false;
   private documents = new Map<string, VectorDocument>();
   private searchIndex = new Map<string, VectorDocument[]>();
@@ -36,50 +38,23 @@ export class WeaviateVectorDatabase {
   private currentShard = 'shard_' + Date.now();
 
   constructor() {
+    const config = ConfigurationManager.getInstance();
+    this.className = config.get<string>('weaviate.className');
     this.initializeClient();
   }
 
   private async initializeClient() {
-    const weaviateUrl = process.env.WEAVIATE_URL;
-    const weaviateApiKey = process.env.WEAVIATE_API_KEY;
-
-    if (!weaviateUrl || !weaviateApiKey) {
-      console.log('Weaviate credentials not found. Using in-memory fallback mode.');
-      this.initializeFallbackMode();
-      return;
-    }
-
     try {
-      // Parse Weaviate URL - handle both full URLs and bare hostnames
-      let scheme: 'http' | 'https' = 'https';
-      let host: string;
-
-      if (weaviateUrl.startsWith('http://') || weaviateUrl.startsWith('https://')) {
-        const url = new URL(weaviateUrl);
-        scheme = url.protocol.replace(':', '') as 'http' | 'https';
-        host = url.host;
+      await weaviateClient.initialize();
+      
+      if (weaviateClient.isReady()) {
+        this.client = weaviateClient.getClient();
+        await this.initializeSchema();
+        this.isInitialized = true;
+        console.log('Weaviate vector database initialized successfully');
       } else {
-        // Bare hostname (typical for Weaviate Cloud)
-        host = weaviateUrl;
-        scheme = 'https'; // Default to HTTPS for cloud instances
+        throw new Error('Weaviate client failed initialization');
       }
-
-      console.log(`Connecting to Weaviate at ${scheme}://${host}`);
-
-      this.client = weaviate.client({
-        scheme: scheme,
-        host: host,
-        apiKey: new ApiKey(weaviateApiKey),
-        headers: {
-          'Content-Type': 'application/json',
-        }
-      });
-
-      // Test connection
-      await this.testConnection();
-      await this.initializeSchema();
-      this.isInitialized = true;
-      console.log('Weaviate client initialized successfully');
     } catch (error) {
       console.error('Failed to initialize Weaviate client:', error);
       console.log('Falling back to in-memory vector storage');
@@ -87,17 +62,6 @@ export class WeaviateVectorDatabase {
     }
   }
 
-  private async testConnection(): Promise<void> {
-    if (!this.client) throw new Error('Weaviate client not initialized');
-    
-    try {
-      const result = await this.client.misc.metaGetter().do();
-      console.log('Weaviate connection test successful, version:', result.version);
-    } catch (error) {
-      console.error('Weaviate connection test failed:', error);
-      throw error;
-    }
-  }
 
   private initializeFallbackMode() {
     this.initializeShard(this.currentShard);

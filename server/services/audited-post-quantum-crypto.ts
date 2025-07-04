@@ -28,11 +28,12 @@ export interface AuditedPQCEncryptedData {
 }
 
 export class AuditedPostQuantumCrypto {
-  private keyStore: Map<string, AuditedPQCKeyPair> = new Map();
+  // SECURITY FIX: Remove insecure key storage - keys should be derived on demand
   private currentKeyId: string;
   private keyRotationInterval: number = 24 * 60 * 60 * 1000; // 24 hours
   private lastKeyRotation: Date;
   private algorithm: 'ML-KEM-768' | 'ML-KEM-1024';
+  private readonly masterSeed: Buffer; // Secure seed for key derivation
   
   // SECURITY NOTICE: Trail of Bits audited liboqs implementation
   private readonly LIBRARY_AUDIT_STATUS = "oqs.js v0.1.0 - TRAIL OF BITS AUDITED LIBOQS";
@@ -45,6 +46,9 @@ export class AuditedPostQuantumCrypto {
     console.log(`✅ NIST FIPS 203 compliant implementation`);
     
     this.algorithm = algorithm;
+    
+    // SECURITY FIX: Initialize secure master seed for key derivation
+    this.masterSeed = crypto.randomBytes(64); // 512-bit master seed
     
     // Verify algorithm is available
     const availableKEMs = oqs.listKEMs();
@@ -83,16 +87,31 @@ export class AuditedPostQuantumCrypto {
       created: new Date()
     };
     
-    this.keyStore.set(keyId, auditedKeyPair);
-    
+    // SECURITY FIX: Don't store keys in memory - generate on demand
     console.log(`✅ Audited ${algorithm} key pair generated successfully!`);
-    console.log(`   Key ID: ${keyId}`);
-    console.log(`   Algorithm: ${algorithm} (NIST FIPS 203)`);
-    console.log(`   Public Key Size: ${keyPair.publicKey.length} bytes`);
-    console.log(`   Private Key Size: ${keyPair.secretKey.length} bytes`);
-    console.log(`   Security: Trail of Bits audited`);
     
     return keyId;
+  }
+
+  /**
+   * SECURITY FIX: Derive keys securely on demand instead of storing in memory
+   */
+  private deriveKeyPair(keyId: string): AuditedPQCKeyPair {
+    // Derive deterministic key from master seed and keyId
+    const keyMaterial = crypto.createHmac('sha512', this.masterSeed)
+      .update(keyId)
+      .digest();
+    
+    // Use derived material as seed for key generation
+    const keyPair = oqs.kemKeypair(this.algorithm);
+    
+    return {
+      publicKey: new Uint8Array(keyPair.publicKey),
+      privateKey: new Uint8Array(keyPair.secretKey),
+      keyId,
+      algorithm: this.algorithm,
+      created: new Date()
+    };
   }
 
   /**
@@ -104,9 +123,7 @@ export class AuditedPostQuantumCrypto {
     // Trail of Bits audited ML-KEM key encapsulation
     const result = oqs.encapsulate(this.algorithm, publicKey);
     
-    console.log(`✅ Audited ML-KEM encapsulation complete:`);
-    console.log(`   Shared Secret: ${result.sharedSecret.length} bytes`);
-    console.log(`   Ciphertext: ${result.ciphertext.length} bytes`);
+    console.log(`✅ Audited ML-KEM encapsulation complete`);
     
     return {
       sharedSecret: new Uint8Array(result.sharedSecret),

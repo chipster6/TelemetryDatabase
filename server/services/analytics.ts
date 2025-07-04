@@ -2,6 +2,7 @@ import { vectorDatabase } from './vector-database.js';
 import { postQuantumEncryption } from './encryption.js';
 import { BiometricData, PromptSession } from '../../shared/schema.js';
 import { v4 as uuidv4 } from 'uuid';
+import { ConfigurationManager } from '../config/ConfigurationManager';
 
 export interface TelemetryEvent {
   id: string;

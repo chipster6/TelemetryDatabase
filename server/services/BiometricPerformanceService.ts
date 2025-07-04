@@ -2,7 +2,8 @@
 // Implements connection pooling, memory management, and edge processing
 
 import { EventEmitter } from 'events';
-import { WeaviateClient } from 'weaviate-ts-client';
+import { weaviateClient } from './weaviate-client';
+import type { WeaviateClient } from 'weaviate-client';
 import Redis from 'redis';
 import { Worker, isMainThread, parentPort, workerData } from 'worker_threads';
 import { Transform, Readable, Writable } from 'stream';

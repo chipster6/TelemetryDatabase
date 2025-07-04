@@ -5,6 +5,7 @@ import { analyticsService } from './analytics.js';
 import * as zlib from 'zlib';
 import { promisify } from 'util';
 import { v4 as uuidv4 } from 'uuid';
+import { ConfigurationManager } from '../config/ConfigurationManager';
 
 const gzip = promisify(zlib.gzip);
 const gunzip = promisify(zlib.gunzip);
@@ -42,6 +43,7 @@ export class CloudExportService {
   private maxRetryAttempts = 3;
 
   constructor() {
+    const config = ConfigurationManager.getInstance();
     this.weaviateCloudEndpoint = process.env.WEAVIATE_CLOUD_ENDPOINT || '';
     this.weaviateCloudApiKey = process.env.WEAVIATE_CLOUD_API_KEY || '';
     

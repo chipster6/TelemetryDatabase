@@ -345,8 +345,15 @@ export class GDPRComplianceService {
   }
 
   private async collectBiometricData(userId: number): Promise<any> {
+    // SECURITY FIX: Only return data that strictly belongs to the requesting user
+    // Prevent data leakage when userId is null/undefined
+    if (!userId || typeof userId !== 'number' || userId <= 0) {
+      console.warn('GDPR: Invalid userId provided for biometric data collection');
+      return [];
+    }
+    
     const data = await storage.getBiometricData();
-    return data.filter(d => d.userId === userId || !d.userId); // Include user-specific or general data
+    return data.filter(d => d.userId === userId); // Only include user-specific data
   }
 
   private async collectSessionData(userId: number): Promise<any> {
