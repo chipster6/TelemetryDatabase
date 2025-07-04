@@ -1,5 +1,5 @@
-// Post-quantum encryption implementation - Updated to use REAL CRYSTALS-Kyber
-import { realPostQuantumCrypto, type RealPQCEncryptedData } from './real-post-quantum-crypto.js';
+// Post-quantum encryption implementation - Updated to use Trail of Bits AUDITED ML-KEM
+import { auditedPostQuantumCrypto, type AuditedPQCEncryptedData } from './audited-post-quantum-crypto.js';
 
 // Legacy interfaces for backward compatibility
 export interface QuantumKeyPair {
@@ -20,84 +20,85 @@ export class PostQuantumEncryption {
   private restEncryptionEnabled: boolean = true;
 
   constructor() {
-    console.log('Post-quantum encryption wrapper initialized - delegating to REAL CRYSTALS-Kyber implementation');
+    console.log('Post-quantum encryption wrapper initialized - delegating to Trail of Bits AUDITED ML-KEM implementation');
   }
 
   /**
-   * Generate a new REAL CRYSTALS-Kyber key pair
+   * Generate a new Trail of Bits AUDITED ML-KEM key pair
    */
   generateKeyPair(): string {
-    return realPostQuantumCrypto.generateKeyPair();
+    return auditedPostQuantumCrypto.generateKeyPair();
   }
 
   /**
-   * Encrypt data using REAL CRYSTALS-Kyber algorithm
+   * Encrypt data using Trail of Bits AUDITED ML-KEM algorithm
    */
   async encrypt(data: any): Promise<EncryptedData> {
     try {
-      const realPqcResult = await realPostQuantumCrypto.encrypt(data);
+      const auditedPqcResult = await auditedPostQuantumCrypto.encrypt(data);
       
       // Convert to legacy format for backward compatibility
       return {
-        data: realPqcResult.data,
-        keyId: realPqcResult.keyId,
-        timestamp: realPqcResult.timestamp,
-        signature: realPqcResult.authTag // Use auth tag as signature
+        data: auditedPqcResult.data,
+        keyId: auditedPqcResult.keyId,
+        timestamp: auditedPqcResult.timestamp,
+        signature: auditedPqcResult.authTag // Use auth tag as signature
       };
     } catch (error) {
-      console.error('REAL CRYSTALS-Kyber Encryption failed:', error);
-      throw new Error('REAL post-quantum encryption failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      console.error('Trail of Bits AUDITED ML-KEM Encryption failed:', error);
+      throw new Error('Audited post-quantum encryption failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
     }
   }
 
   /**
-   * Decrypt data using REAL CRYSTALS-Kyber algorithm
+   * Decrypt data using Trail of Bits AUDITED ML-KEM algorithm
    */
   async decrypt(encryptedData: EncryptedData): Promise<any> {
     try {
-      // Convert from legacy format to REAL PQC format
-      const realPqcData: RealPQCEncryptedData = {
+      // Convert from legacy format to AUDITED PQC format
+      const auditedPqcData: AuditedPQCEncryptedData = {
         data: encryptedData.data,
         keyId: encryptedData.keyId,
         timestamp: encryptedData.timestamp,
-        algorithm: 'REAL-ml-kem-768-aes-256-gcm',
+        algorithm: 'AUDITED-ML-KEM-768-aes-256-gcm',
         authTag: encryptedData.signature,
         encapsulatedKey: '', // Legacy field
-        kyberCiphertext: '' // Will be extracted from data payload
+        kemCiphertext: '', // Will be extracted from data payload
+        version: 'AUDITED-LIBOQS-v1.0'
       };
       
-      return await realPostQuantumCrypto.decrypt(realPqcData);
+      return await auditedPostQuantumCrypto.decrypt(auditedPqcData);
     } catch (error) {
-      console.error('REAL CRYSTALS-Kyber Decryption failed:', error);
-      throw new Error('REAL post-quantum decryption failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      console.error('Trail of Bits AUDITED ML-KEM Decryption failed:', error);
+      throw new Error('Audited post-quantum decryption failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
     }
   }
 
   /**
-   * Rotate REAL CRYSTALS-Kyber keys for forward secrecy
+   * Rotate Trail of Bits AUDITED ML-KEM keys for forward secrecy
    */
   rotateKeys(): string {
-    return realPostQuantumCrypto.rotateKeys();
+    return auditedPostQuantumCrypto.rotateKeys();
   }
 
   /**
-   * Get current REAL CRYSTALS-Kyber key ID
+   * Get current Trail of Bits AUDITED ML-KEM key ID
    */
   getCurrentKeyId(): string {
-    return realPostQuantumCrypto.getCurrentKeyId();
+    return auditedPostQuantumCrypto.getCurrentKeyId();
   }
 
   /**
    * Export key for cloud backup (security limited)
    */
   exportKey(keyId: string): QuantumKeyPair | undefined {
-    const keyInfo = realPostQuantumCrypto.getKeyInfo(keyId);
+    const keyInfo = auditedPostQuantumCrypto.getKeyInfo(keyId);
     if (!keyInfo) return undefined;
     
     // Return limited key info for backward compatibility
     return {
       publicKey: Buffer.from(keyInfo.publicKey).toString('base64'),
-      privateKey: '[REAL-CRYSTALS-KYBER-PROTECTED]', // Don't expose private key
+      privateKey: '[TRAIL-OF-BITS-AUDITED-ML-KEM-PROTECTED]', // Don't expose private key
       keyId: keyInfo.keyId
     };
   }
@@ -113,7 +114,7 @@ export class PostQuantumEncryption {
   }
 
   /**
-   * Encrypt biometric data (at rest) with REAL CRYSTALS-Kyber protection
+   * Encrypt biometric data (at rest) with Trail of Bits AUDITED ML-KEM protection
    */
   async encryptBiometricData(biometricData: any): Promise<EncryptedData> {
     if (!this.restEncryptionEnabled) {
@@ -121,18 +122,18 @@ export class PostQuantumEncryption {
     }
     
     try {
-      const realPqcResult = await realPostQuantumCrypto.encryptBiometricData(biometricData);
+      const auditedPqcResult = await auditedPostQuantumCrypto.encryptBiometricData(biometricData);
       
       // Convert to legacy format
       return {
-        data: realPqcResult.data,
-        keyId: realPqcResult.keyId,
-        timestamp: realPqcResult.timestamp,
-        signature: realPqcResult.authTag
+        data: auditedPqcResult.data,
+        keyId: auditedPqcResult.keyId,
+        timestamp: auditedPqcResult.timestamp,
+        signature: auditedPqcResult.authTag
       };
     } catch (error) {
-      console.error('REAL CRYSTALS-Kyber biometric data encryption failed:', error);
-      throw new Error('REAL biometric encryption failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      console.error('Trail of Bits AUDITED ML-KEM biometric data encryption failed:', error);
+      throw new Error('Audited biometric encryption failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
     }
   }
 
@@ -193,13 +194,13 @@ export class PostQuantumEncryption {
   }
 
   /**
-   * Get REAL CRYSTALS-Kyber encryption status
+   * Get Trail of Bits AUDITED ML-KEM encryption status
    */
-  getEncryptionStatus(): { rest: boolean; transit: boolean; realPqcStatus: any } {
+  getEncryptionStatus(): { rest: boolean; transit: boolean; auditedPqcStatus: any } {
     return {
       rest: this.restEncryptionEnabled,
       transit: this.transitEncryptionEnabled,
-      realPqcStatus: realPostQuantumCrypto.getStatus()
+      auditedPqcStatus: auditedPostQuantumCrypto.getStatus()
     };
   }
 }

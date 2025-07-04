@@ -2,7 +2,7 @@
 // This allows our existing Express API to run on Cloudflare Workers
 
 import { storage } from '../dist/storage.js';
-import { realPostQuantumCrypto } from '../dist/services/real-post-quantum-crypto.js';
+import { auditedPostQuantumCrypto } from '../dist/services/audited-post-quantum-crypto.js';
 
 // Create a mock Express-like request/response for our existing routes
 class MockRequest {
