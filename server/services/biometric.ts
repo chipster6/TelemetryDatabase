@@ -1,5 +1,7 @@
 import { storage } from "../storage";
 import type { BiometricData, InsertBiometricData, CognitiveCorrelation } from "@shared/schema";
+import { BiometricEncryption } from './BiometricEncryption.js';
+import { logger } from '../utils/Logger.js';
 
 export interface BiometricReading {
   heartRate?: number;
@@ -29,6 +31,7 @@ export interface CognitiveMetrics {
 export class BiometricService {
   private dataCache = new Map<string, { data: any; timestamp: number }>();
   private cacheTimeout = 5000; // 5 seconds cache
+  private encryption: BiometricEncryption;
   private correlationCoefficients = {
     hrvCognitivePerformance: 0.424,
     temperatureCircadianRhythm: 0.78,
@@ -36,42 +39,61 @@ export class BiometricService {
     sleepQualityAttention: 0.71
   };
 
+  constructor() {
+    this.encryption = new BiometricEncryption();
+    logger.info('BiometricService initialized with encryption support');
+  }
+
   async processBiometricReading(reading: BiometricReading, sessionId?: number): Promise<BiometricData> {
-    // Calculate derived metrics
-    const processedReading = this.calculateDerivedMetrics(reading);
-    
-    // Store biometric data
-    const biometricData: InsertBiometricData = {
-      sessionId: sessionId || null,
-      heartRate: processedReading.heartRate || null,
-      hrv: processedReading.hrv || null,
-      stressLevel: processedReading.stressLevel || null,
-      attentionLevel: processedReading.attentionLevel || null,
-      cognitiveLoad: processedReading.cognitiveLoad || null,
-      skinTemperature: processedReading.skinTemperature || null,
-      respiratoryRate: processedReading.respiratoryRate || null,
-      oxygenSaturation: processedReading.oxygenSaturation || null,
-      environmentalData: processedReading.environmentalData || null,
-      deviceSource: processedReading.deviceSource
-    };
+    try {
+      // Calculate derived metrics
+      const processedReading = this.calculateDerivedMetrics(reading);
+      
+      // Encrypt sensitive biometric data before storage
+      const encryptedReading = await this.encryption.encryptBiometricData(processedReading);
+      
+      // Store biometric data (encrypted)
+      const biometricData: InsertBiometricData = {
+        sessionId: sessionId || null,
+        heartRate: encryptedReading.heartRate || null,
+        hrv: encryptedReading.hrv || null,
+        stressLevel: encryptedReading.stressLevel || null,
+        attentionLevel: encryptedReading.attentionLevel || null,
+        cognitiveLoad: encryptedReading.cognitiveLoad || null,
+        skinTemperature: encryptedReading.skinTemperature || null,
+        respiratoryRate: encryptedReading.respiratoryRate || null,
+        oxygenSaturation: encryptedReading.oxygenSaturation || null,
+        environmentalData: encryptedReading.environmentalData || null,
+        deviceSource: processedReading.deviceSource // Device source not encrypted as it's metadata
+      };
 
-    const savedData = await storage.createBiometricData(biometricData);
-
-    // Calculate and store cognitive correlations if session exists
-    if (sessionId) {
-      const cognitiveMetrics = this.calculateCognitiveCorrelations(processedReading);
-      await storage.createCognitiveCorrelation({
+      const savedData = await storage.createBiometricData(biometricData);
+      
+      logger.debug('Biometric data processed and encrypted', {
         sessionId,
-        attentionScore: cognitiveMetrics.attentionScore,
-        stressScore: cognitiveMetrics.stressScore,
-        cognitiveLoadScore: cognitiveMetrics.cognitiveLoadScore,
-        circadianAlignment: cognitiveMetrics.circadianAlignment,
-        promptComplexityScore: null,
-        responseQualityScore: null
+        deviceSource: processedReading.deviceSource,
+        hasEncryption: !!encryptedReading._encryption
       });
-    }
 
-    return savedData;
+      // Calculate and store cognitive correlations if session exists
+      if (sessionId) {
+        const cognitiveMetrics = this.calculateCognitiveCorrelations(processedReading);
+        await storage.createCognitiveCorrelation({
+          sessionId,
+          attentionScore: cognitiveMetrics.attentionScore,
+          stressScore: cognitiveMetrics.stressScore,
+          cognitiveLoadScore: cognitiveMetrics.cognitiveLoadScore,
+          circadianAlignment: cognitiveMetrics.circadianAlignment,
+          promptComplexityScore: null,
+          responseQualityScore: null
+        });
+      }
+
+      return savedData;
+    } catch (error) {
+      logger.error('Failed to process biometric reading:', error);
+      throw new Error('Biometric processing failed');
+    }
   }
 
   private calculateDerivedMetrics(reading: BiometricReading): BiometricReading {
@@ -203,13 +225,29 @@ export class BiometricService {
       return cached.data;
     }
     
-    const data = await storage.getBiometricData(undefined, limit);
-    this.dataCache.set(cacheKey, { data, timestamp: Date.now() });
+    const encryptedData = await storage.getBiometricData(undefined, limit);
+    
+    // Decrypt biometric data before returning
+    const decryptedData = await Promise.all(
+      encryptedData.map(async (data) => {
+        try {
+          return await this.decryptBiometricDataItem(data);
+        } catch (error) {
+          logger.warn('Failed to decrypt biometric data item', { 
+            id: data.id, 
+            error: error.message 
+          });
+          return data; // Return original if decryption fails
+        }
+      })
+    );
+    
+    this.dataCache.set(cacheKey, { data: decryptedData, timestamp: Date.now() });
     
     // Clean up expired cache entries
     this.clearExpiredCache();
     
-    return data;
+    return decryptedData;
   }
 
   private clearExpiredCache(): void {
@@ -218,6 +256,45 @@ export class BiometricService {
       if (now - value.timestamp > this.cacheTimeout) {
         this.dataCache.delete(key);
       }
+    }
+  }
+
+  private async decryptBiometricDataItem(data: BiometricData): Promise<BiometricData> {
+    try {
+      // Create a copy to avoid mutating original
+      const decryptedData = { ...data };
+      
+      // Check if any fields are encrypted
+      const fieldsToDecrypt = ['heartRate', 'hrv', 'stressLevel', 'attentionLevel', 
+                              'cognitiveLoad', 'skinTemperature', 'respiratoryRate', 
+                              'oxygenSaturation', 'environmentalData'];
+      
+      for (const field of fieldsToDecrypt) {
+        const fieldValue = (data as any)[field];
+        if (fieldValue && typeof fieldValue === 'object' && fieldValue.encrypted) {
+          (decryptedData as any)[field] = await this.encryption.decryptValue(fieldValue.data);
+        }
+      }
+      
+      return decryptedData;
+    } catch (error) {
+      logger.error('Failed to decrypt biometric data item:', error);
+      throw error;
+    }
+  }
+
+  async getLatestBiometricData(userId?: string): Promise<BiometricData | null> {
+    try {
+      const recentData = await storage.getBiometricData(undefined, 1);
+      if (recentData.length === 0) {
+        return null;
+      }
+
+      const latestData = recentData[0];
+      return await this.decryptBiometricDataItem(latestData);
+    } catch (error) {
+      logger.error('Failed to get latest biometric data:', error);
+      throw new Error('Failed to retrieve latest biometric data');
     }
   }
 

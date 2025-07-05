@@ -1,5 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { LLMService } from '../services/LLMService.js';
+import { AuditLogger, AuditEventType } from '../services/AuditLogger.js';
+import { createSecurityRoutes } from './security-routes.js';
+import { createAdminRoutes } from './admin-routes.js';
 import { logger } from '../utils/logger.js';
 import { z } from 'zod';
 
@@ -13,8 +16,41 @@ const HealthCheckSchema = z.object({
   includeModels: z.boolean().optional().default(false)
 });
 
-export function createRoutes(llmService: LLMService): Router {
+interface AuthenticatedRequest extends Request {
+  userId?: string;
+  startTime?: number;
+  metrics?: {
+    startTime: number;
+    tokensUsed: number;
+    promptLength: number;
+    memoryUsage: number;
+  };
+  resourceLimits?: {
+    maxTokens: number;
+    maxResponseLength: number;
+    timeoutMs: number;
+  };
+}
+
+interface SecurityComponents {
+  resourceLimits: any;
+  abuseDetection: any;
+  userRateLimit: any;
+  promptSecurity: any;
+}
+
+export function createRoutes(
+  llmService: LLMService, 
+  auditLogger: AuditLogger,
+  security?: SecurityComponents
+): Router {
   const router = Router();
+
+  // Middleware to extract user info and timing
+  router.use((req: AuthenticatedRequest, res, next) => {
+    req.startTime = Date.now();
+    next();
+  });
 
   // Health check endpoint
   router.get('/health', async (req: Request, res: Response) => {
@@ -41,9 +77,16 @@ export function createRoutes(llmService: LLMService): Router {
   });
 
   // Main generation endpoint
-  router.post('/generate', async (req: Request, res: Response) => {
+  router.post('/generate', async (req: AuthenticatedRequest, res: Response) => {
+    const startTime = req.startTime || Date.now();
+    let success = false;
+    let tokensUsed = 0;
+    let response = '';
+    let cognitiveAdaptations: string[] = [];
+
     try {
       const { userId, prompt, stream } = GenerateRequestSchema.parse(req.body);
+      req.userId = userId;
 
       if (stream) {
         // Set up Server-Sent Events for streaming
@@ -62,6 +105,9 @@ export function createRoutes(llmService: LLMService): Router {
             res.write(`data: ${JSON.stringify({ token })}\n\n`);
           });
 
+          response = fullResponse;
+          success = true;
+
           res.write(`data: ${JSON.stringify({ 
             done: true, 
             response: fullResponse,
@@ -72,21 +118,36 @@ export function createRoutes(llmService: LLMService): Router {
           })}\n\n`);
         } catch (error) {
           res.write(`data: ${JSON.stringify({ 
-            error: error.message,
+            error: 'Generation failed',
             done: true 
           })}\n\n`);
+          throw error;
         } finally {
           res.end();
         }
       } else {
         // Regular JSON response
-        const response = await llmService.generateWithBiometricContext(prompt, userId);
+        const llmResponse = await llmService.generateWithBiometricContext(prompt, userId);
+        response = llmResponse.response;
+        tokensUsed = llmResponse.metadata.tokensUsed || 0;
+        cognitiveAdaptations = llmResponse.metadata.cognitiveAdaptations || [];
+        success = true;
+
+        // Track token consumption for resource limits
+        if (req.metrics && security?.resourceLimits) {
+          req.metrics.tokensUsed = tokensUsed;
+        }
         
         res.json({
           success: true,
-          data: response,
+          data: llmResponse,
           timestamp: new Date().toISOString()
         });
+      }
+
+      // Apply post-request resource tracking
+      if (security?.resourceLimits && tokensUsed > 0) {
+        await security.resourceLimits.postRequestLimits()(req, res, () => {});
       }
     } catch (error) {
       logger.error('Generation request failed:', error);
@@ -95,13 +156,32 @@ export function createRoutes(llmService: LLMService): Router {
         res.status(400).json({
           success: false,
           error: 'Invalid request format',
-          details: error.errors
+          details: error.errors.map(e => ({ field: e.path.join('.'), message: e.message }))
         });
       } else {
         res.status(500).json({
           success: false,
-          error: error.message || 'Generation failed'
+          error: 'Generation failed'
         });
+      }
+    } finally {
+      // Audit log the LLM generation attempt
+      if (req.userId && req.body?.prompt) {
+        try {
+          await auditLogger.logLLMGeneration({
+            userId: req.userId,
+            prompt: req.body.prompt,
+            response: response,
+            model: 'mistral:7b-instruct-q4',
+            tokensUsed: tokensUsed,
+            cognitiveAdaptations: cognitiveAdaptations,
+            sourceIp: req.ip || 'unknown',
+            userAgent: req.get('User-Agent'),
+            processingTimeMs: Date.now() - startTime
+          });
+        } catch (auditError) {
+          logger.error('Failed to log audit event:', auditError);
+        }
       }
     }
   });
@@ -142,6 +222,14 @@ export function createRoutes(llmService: LLMService): Router {
       });
     }
   });
+
+  // Mount security routes
+  router.use(createSecurityRoutes(llmService, auditLogger));
+
+  // Mount admin routes (if security components are available)
+  if (security) {
+    router.use(createAdminRoutes(llmService, auditLogger, security));
+  }
 
   return router;
 }

@@ -1,0 +1,215 @@
+# Security-focused pre-commit hooks configuration
+# This ensures automated security validation before commits
+
+repos:
+  # General code quality and security
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ['--maxkb=1024']
+      - id: detect-private-key
+      - id: detect-aws-credentials
+
+  # TypeScript/JavaScript security and linting
+  - repo: https://github.com/pre-commit/mirrors-eslint
+    rev: v8.57.0
+    hooks:
+      - id: eslint
+        files: \.(js|ts|tsx?)$
+        types: [file]
+        additional_dependencies:
+          - eslint@8.57.0
+          - '@typescript-eslint/parser@6.21.0'
+          - '@typescript-eslint/eslint-plugin@6.21.0'
+          - 'eslint-plugin-security@1.7.1'
+
+  # Secret detection with multiple tools
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.4.0
+    hooks:
+      - id: detect-secrets
+        args: ['--baseline', '.secrets.baseline']
+        exclude: package-lock.json
+
+  # Additional secret detection
+  - repo: https://github.com/trufflesecurity/trufflehog
+    rev: v3.63.7
+    hooks:
+      - id: trufflehog
+        name: TruffleHog
+        description: Detect secrets in your data.
+        entry: bash -c 'trufflehog git file://. --since-commit HEAD --only-verified --fail'
+        language: system
+        stages: ["commit", "push"]
+
+  # Dockerfile security linting
+  - repo: https://github.com/hadolint/hadolint
+    rev: v2.12.0
+    hooks:
+      - id: hadolint-docker
+        args: ['--ignore', 'DL3008', '--ignore', 'DL3009']
+
+  # Security audit for npm dependencies
+  - repo: local
+    hooks:
+      - id: npm-audit
+        name: npm audit
+        entry: npm audit --audit-level=high
+        language: system
+        files: package.*\.json
+        stages: [commit]
+
+      - id: npm-audit-signatures
+        name: npm audit signatures
+        entry: npm audit signatures
+        language: system
+        files: package.*\.json
+        stages: [commit]
+
+  # Custom security validations
+  - repo: local
+    hooks:
+      - id: security-env-check
+        name: Security Environment Check
+        entry: bash -c '
+          if grep -r "process\.env\." src/ --include="*.ts" --include="*.js" | grep -v "NODE_ENV\|LOG_LEVEL"; then
+            echo "❌ Direct process.env usage detected. Use configuration module instead.";
+            exit 1;
+          fi'
+        language: system
+        files: \.(ts|js)$
+
+      - id: hardcoded-secrets-check
+        name: Hardcoded Secrets Check
+        entry: bash -c '
+          if grep -r -E "(password|secret|key|token)\s*[=:]\s*['\''\"]\w{8,}" src/ --include="*.ts" --include="*.js"; then
+            echo "❌ Potential hardcoded secrets detected";
+            exit 1;
+          fi'
+        language: system
+        files: \.(ts|js)$
+
+      - id: sql-injection-check
+        name: SQL Injection Prevention Check
+        entry: bash -c '
+          if grep -r -E "SELECT|INSERT|UPDATE|DELETE.*\+.*['\''\"]\s*\+|query.*\+.*['\''\"]\s*\+" src/ --include="*.ts" --include="*.js"; then
+            echo "❌ Potential SQL injection vulnerability detected";
+            exit 1;
+          fi'
+        language: system
+        files: \.(ts|js)$
+
+      - id: xss-prevention-check
+        name: XSS Prevention Check
+        entry: bash -c '
+          if grep -r -E "innerHTML|outerHTML|document\.write" src/ --include="*.ts" --include="*.js"; then
+            echo "❌ Potential XSS vulnerability detected (innerHTML/outerHTML/document.write usage)";
+            exit 1;
+          fi'
+        language: system
+        files: \.(ts|js)$
+
+      - id: unsafe-eval-check
+        name: Unsafe eval() Check
+        entry: bash -c '
+          if grep -r -E "\beval\s*\(|Function\s*\(.*\)" src/ --include="*.ts" --include="*.js"; then
+            echo "❌ Unsafe eval() or Function() constructor detected";
+            exit 1;
+          fi'
+        language: system
+        files: \.(ts|js)$
+
+      - id: console-log-check
+        name: Console Log Check
+        entry: bash -c '
+          if grep -r "console\.log\|console\.debug" src/ --include="*.ts" --include="*.js"; then
+            echo "❌ console.log/debug statements found. Use logger instead.";
+            exit 1;
+          fi'
+        language: system
+        files: \.(ts|js)$
+
+      - id: dockerfile-security-check
+        name: Dockerfile Security Check
+        entry: bash -c '
+          if [ -f "Dockerfile" ]; then
+            if grep -E "^USER root|^FROM.*:latest|ADD http" Dockerfile; then
+              echo "❌ Dockerfile security issues detected";
+              exit 1;
+            fi
+          fi'
+        language: system
+        files: ^Dockerfile.*
+
+      - id: package-json-security
+        name: Package.json Security Check
+        entry: bash -c '
+          if [ -f "package.json" ]; then
+            # Check for known vulnerable packages
+            if jq -r ".dependencies,.devDependencies | keys[]" package.json | grep -E "lodash@[0-3]\.|request@"; then
+              echo "❌ Known vulnerable packages detected in package.json";
+              exit 1;
+            fi
+          fi'
+        language: system
+        files: package\.json$
+
+      - id: typescript-strict-check
+        name: TypeScript Strict Mode Check
+        entry: bash -c '
+          if [ -f "tsconfig.json" ]; then
+            if ! jq -e ".compilerOptions.strict == true and .compilerOptions.noImplicitAny == true" tsconfig.json >/dev/null; then
+              echo "❌ TypeScript strict mode not enabled in tsconfig.json";
+              exit 1;
+            fi
+          fi'
+        language: system
+        files: tsconfig\.json$
+
+      - id: security-headers-check
+        name: Security Headers Check
+        entry: bash -c '
+          if ! grep -r "helmet\|X-Content-Type-Options\|X-Frame-Options\|X-XSS-Protection" src/ --include="*.ts" --include="*.js" >/dev/null; then
+            echo "❌ Security headers middleware not found. Consider using helmet.js";
+            exit 1;
+          fi'
+        language: system
+        files: \.(ts|js)$
+
+  # SAST (Static Application Security Testing)
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.7.5
+    hooks:
+      - id: bandit
+        args: ['-r', '.', '-f', 'json', '-o', 'bandit-report.json']
+        files: \.py$
+
+  # Additional security tools
+  - repo: https://github.com/gitguardian/ggshield
+    rev: v1.25.0
+    hooks:
+      - id: ggshield
+        language: python
+        stages: [commit]
+
+default_stages: [commit]
+fail_fast: false
+
+# Configuration for specific tools
+ci:
+  autofix_commit_msg: |
+    [pre-commit.ci] auto fixes from pre-commit hooks
+
+    for more information, see https://pre-commit.ci
+  autofix_prs: true
+  autoupdate_branch: ''
+  autoupdate_commit_msg: '[pre-commit.ci] pre-commit autoupdate'
+  autoupdate_schedule: weekly
+  skip: [trufflehog, npm-audit, npm-audit-signatures]
+  submodules: false

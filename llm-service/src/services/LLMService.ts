@@ -1,18 +1,30 @@
 import { EventEmitter } from 'events';
 import { TelemetryDatabaseClient } from './TelemetryDatabaseClient.js';
 import { OllamaClient } from '../ollama/OllamaClient.js';
+import { SecureOllamaClient, OllamaSecurityConfig } from './SecureOllamaClient.js';
 import { BiometricContext, LLMRequest, LLMResponse, TelemetryDatabaseConnection } from '../types/index.js';
 import { logger } from '../utils/logger.js';
 
 export class LLMService extends EventEmitter {
   private telemetryClient: TelemetryDatabaseClient;
-  private ollamaClient: OllamaClient;
+  private ollamaClient: OllamaClient | SecureOllamaClient;
   private isInitialized = false;
+  private useSecureClient: boolean;
 
-  constructor(telemetryConfig: TelemetryDatabaseConnection, ollamaHost?: string) {
+  constructor(telemetryConfig: TelemetryDatabaseConnection, ollamaConfig?: string | OllamaSecurityConfig) {
     super();
     this.telemetryClient = new TelemetryDatabaseClient(telemetryConfig);
-    this.ollamaClient = new OllamaClient(ollamaHost);
+    
+    // Determine if we should use secure client based on config type
+    if (typeof ollamaConfig === 'object' && ollamaConfig !== null) {
+      this.useSecureClient = true;
+      this.ollamaClient = new SecureOllamaClient(ollamaConfig);
+      logger.info('LLMService using SecureOllamaClient with certificate pinning');
+    } else {
+      this.useSecureClient = false;
+      this.ollamaClient = new OllamaClient(ollamaConfig as string);
+      logger.warn('LLMService using standard OllamaClient - no certificate pinning');
+    }
     
     this.setupEventHandlers();
   }
@@ -66,7 +78,7 @@ export class LLMService extends EventEmitter {
       this.emit('llm_response', { userId: data.userId, response });
     } catch (error) {
       logger.error('Error handling LLM request:', error);
-      this.emit('llm_error', { userId: data.userId, error: error.message });
+      this.emit('llm_error', { userId: data.userId, error: error instanceof Error ? error.message : 'Unknown error' });
     }
   }
 
@@ -201,15 +213,102 @@ export class LLMService extends EventEmitter {
   }
 
   getModelStatus(): any {
-    return {
+    const baseStatus = {
       initialized: this.isInitialized,
       loadedModels: this.ollamaClient.getLoadedModels(),
-      telemetryConnected: this.telemetryClient.listenerCount('connected') > 0
+      telemetryConnected: this.telemetryClient.listenerCount('connected') > 0,
+      secureConnection: this.useSecureClient
+    };
+
+    // Add security stats if using secure client
+    if (this.useSecureClient && this.ollamaClient instanceof SecureOllamaClient) {
+      return {
+        ...baseStatus,
+        connectionStats: this.ollamaClient.getConnectionStats(),
+        securityConfig: this.ollamaClient.getSecurityConfig()
+      };
+    }
+
+    return baseStatus;
+  }
+
+  async updateCertificatePins(fingerprints: string[]): Promise<void> {
+    if (!this.useSecureClient || !(this.ollamaClient instanceof SecureOllamaClient)) {
+      throw new Error('Certificate pinning only available with SecureOllamaClient');
+    }
+
+    logger.info('Updating Ollama certificate pins', {
+      newPinCount: fingerprints.length,
+      fingerprints: fingerprints
+    });
+
+    this.ollamaClient.updatePinnedCertificates(fingerprints);
+    
+    // Test the connection with new pins
+    const connectionTest = await this.ollamaClient.testSecureConnection();
+    if (!connectionTest) {
+      logger.error('Certificate pin update failed - connection test failed');
+      throw new Error('Certificate pin update failed - unable to establish secure connection');
+    }
+
+    logger.info('Certificate pins updated successfully');
+  }
+
+  async testSecureConnection(): Promise<{
+    success: boolean;
+    stats?: any;
+    error?: string;
+  }> {
+    if (!this.useSecureClient || !(this.ollamaClient instanceof SecureOllamaClient)) {
+      return {
+        success: false,
+        error: 'Secure connection testing only available with SecureOllamaClient'
+      };
+    }
+
+    try {
+      const success = await this.ollamaClient.testSecureConnection();
+      const stats = this.ollamaClient.getConnectionStats();
+      
+      return {
+        success,
+        stats
+      };
+    } catch (error) {
+      logger.error('Secure connection test failed:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  getSecurityStatus(): {
+    certificatePinningEnabled: boolean;
+    connectionStats?: any;
+    securityConfig?: any;
+  } {
+    if (!this.useSecureClient || !(this.ollamaClient instanceof SecureOllamaClient)) {
+      return {
+        certificatePinningEnabled: false
+      };
+    }
+
+    return {
+      certificatePinningEnabled: true,
+      connectionStats: this.ollamaClient.getConnectionStats(),
+      securityConfig: this.ollamaClient.getSecurityConfig()
     };
   }
 
   async shutdown(): Promise<void> {
     logger.info('Shutting down LLM Service...');
+    
+    // Close secure client if using it
+    if (this.useSecureClient && this.ollamaClient instanceof SecureOllamaClient) {
+      await this.ollamaClient.close();
+    }
+    
     this.telemetryClient.disconnect();
     this.isInitialized = false;
     this.emit('shutdown');

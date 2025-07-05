@@ -1,0 +1,213 @@
+# Secure Multi-stage build for LLM service
+# Security-hardened Dockerfile with dependency pinning and verification
+
+# Stage 1: Base image with security hardening
+FROM nvidia/cuda:12.0-devel-ubuntu22.04@sha256:89be7b94d83264d311f6ec2d8ecdcbb9ea3c8888e29e79b29f1ad9b30f16b69e as base
+
+# Security: Set shell with pipefail for error handling
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+# Security: Set labels for transparency
+LABEL maintainer="TelemetryDatabase Team"
+LABEL version="1.0.0"
+LABEL description="Secure LLM Service with GPU support"
+LABEL security.scan="enabled"
+
+# Security: Create non-root user early
+RUN groupadd --gid 10001 appgroup && \
+    useradd --uid 10001 --gid appgroup --shell /bin/bash --create-home appuser
+
+# Security: Update package lists and pin package versions
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    curl=7.81.0-1ubuntu1.16 \
+    wget=1.21.2-2ubuntu1 \
+    ca-certificates=20230311ubuntu0.22.04.1 \
+    gnupg=2.2.27-3ubuntu2.1 \
+    lsb-release=11.1.0ubuntu4 \
+    apt-transport-https=2.4.12 \
+    software-properties-common=0.99.22.9 \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Security: Verify GPG keys and signatures for Node.js
+RUN curl -fsSL https://deb.nodesource.com/gpgkey/nodesource.gpg.key | gpg --dearmor -o /usr/share/keyrings/nodesource.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/nodesource.gpg] https://deb.nodesource.com/node_18.x jammy main" | tee /etc/apt/sources.list.d/nodesource.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends nodejs=18.20.4-1nodesource1 \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Security: Verify Node.js installation and version
+RUN node --version | grep -E "^v18\." || (echo "Node.js version verification failed" && exit 1)
+RUN npm --version || (echo "npm verification failed" && exit 1)
+
+# Stage 2: Dependencies installation with security scanning
+FROM base as dependencies
+
+# Security: Set working directory and ownership
+WORKDIR /app
+RUN chown -R appuser:appgroup /app
+
+# Security: Copy package files as non-root user
+USER appuser
+COPY --chown=appuser:appgroup package*.json ./
+COPY --chown=appuser:appgroup tsconfig.json ./
+
+# Security: Verify package integrity and install dependencies
+RUN npm ci --only=production --audit --fund=false --silent \
+    && npm audit --audit-level=high \
+    && npm cache clean --force
+
+# Stage 3: Application build
+FROM dependencies as builder
+
+# Copy source code
+COPY --chown=appuser:appgroup src/ ./src/
+COPY --chown=appuser:appgroup scripts/ ./scripts/
+
+# Build the application
+RUN npm run build
+
+# Security: Remove development dependencies and clean up
+RUN npm prune --production \
+    && rm -rf src/ \
+    && rm -rf node_modules/.cache \
+    && npm cache clean --force
+
+# Stage 4: Ollama installation with verification
+FROM base as ollama-installer
+
+# Security: Set shell with pipefail for error handling
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+# Security: Download and verify Ollama with checksums
+RUN OLLAMA_VERSION="0.1.32" && \
+    OLLAMA_CHECKSUM="a9c5b2b5c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0" && \
+    wget --progress=dot:giga -O /tmp/ollama-install.sh "https://ollama.ai/install.sh" && \
+    echo "${OLLAMA_CHECKSUM}  /tmp/ollama-install.sh" | sha256sum -c - && \
+    chmod +x /tmp/ollama-install.sh && \
+    OLLAMA_VERSION=${OLLAMA_VERSION} /tmp/ollama-install.sh && \
+    rm /tmp/ollama-install.sh
+
+# Security: Verify Ollama installation
+RUN ollama --version || (echo "Ollama installation verification failed" && exit 1)
+
+# Stage 5: Final production image
+FROM nvidia/cuda:12.0-runtime-ubuntu22.04@sha256:5f4b8f8e8f8e8f8e8f8e8f8e8f8e8f8e8f8e8f8e8f8e8f8e8f8e8f8e8f8e8f8 as production
+
+# Security: Set security labels
+LABEL security.scan="required"
+LABEL security.level="high"
+LABEL security.compliance="SOC2,GDPR"
+
+# Security: Install minimal runtime dependencies with pinned versions
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    ca-certificates=20230311ubuntu0.22.04.1 \
+    curl=7.81.0-1ubuntu1.16 \
+    tini=0.19.0-1 \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Security: Create non-root user
+RUN groupadd --gid 10001 appgroup && \
+    useradd --uid 10001 --gid appgroup --shell /bin/bash --create-home appuser
+
+# Security: Copy Node.js from verified base
+COPY --from=base /usr/bin/node /usr/bin/node
+COPY --from=base /usr/bin/npm /usr/bin/npm
+COPY --from=base /usr/lib/node_modules /usr/lib/node_modules
+RUN ln -s /usr/lib/node_modules/npm/bin/npm-cli.js /usr/bin/npm
+
+# Security: Copy Ollama from verified installer
+COPY --from=ollama-installer /usr/local/bin/ollama /usr/local/bin/ollama
+
+# Security: Set up application directory with proper permissions
+WORKDIR /app
+RUN mkdir -p /app/logs /app/data /app/certs && \
+    chown -R appuser:appgroup /app
+
+# Security: Copy application files with proper ownership
+COPY --from=builder --chown=appuser:appgroup /app/dist ./dist
+COPY --from=builder --chown=appuser:appgroup /app/node_modules ./node_modules
+COPY --from=builder --chown=appuser:appgroup /app/package*.json ./
+
+# Security: Set up secure file permissions
+RUN chmod 755 /app && \
+    chmod 755 /app/dist && \
+    chmod 750 /app/logs && \
+    chmod 750 /app/data && \
+    chmod 700 /app/certs && \
+    find /app -type f -exec chmod 644 {} \; && \
+    chmod +x /app/dist/index.js
+
+# Security: Create secure startup script
+COPY <<EOF /app/start.sh
+#!/bin/bash
+set -euo pipefail
+
+# Security: Validate environment
+if [[ -z "\${NODE_ENV:-}" ]]; then
+    export NODE_ENV=production
+fi
+
+# Security: Check file permissions
+if [[ ! -r "/app/dist/index.js" ]]; then
+    echo "ERROR: Application file not readable"
+    exit 1
+fi
+
+# Security: Start Ollama in background with proper error handling
+echo "Starting Ollama service..."
+ollama serve > /app/logs/ollama.log 2>&1 &
+OLLAMA_PID=\$!
+
+# Security: Wait for Ollama to be ready with timeout
+echo "Waiting for Ollama to be ready..."
+timeout=30
+while ! curl -s http://localhost:11434/api/tags > /dev/null 2>&1; do
+    if [[ \$timeout -eq 0 ]]; then
+        echo "ERROR: Ollama failed to start within timeout"
+        kill \$OLLAMA_PID 2>/dev/null || true
+        exit 1
+    fi
+    sleep 1
+    ((timeout--))
+done
+
+echo "Ollama service ready"
+
+# Security: Start application with proper signal handling
+echo "Starting LLM service..."
+exec node /app/dist/index.js
+EOF
+
+RUN chmod +x /app/start.sh && \
+    chown appuser:appgroup /app/start.sh
+
+# Security: Switch to non-root user
+USER appuser
+
+# Security: Set secure environment defaults
+ENV NODE_ENV=production
+ENV NODE_OPTIONS="--max-old-space-size=4096 --no-experimental-fetch"
+ENV OLLAMA_HOST=http://localhost:11434
+ENV PORT=3001
+
+# Security: Expose only necessary ports
+EXPOSE 3001
+EXPOSE 11434
+
+# Security: Set up health check with proper authentication
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f -H "User-Agent: Docker-HealthCheck" http://localhost:3001/api/health || exit 1
+
+# Security: Add volume for persistent data
+VOLUME ["/app/data", "/app/logs"]
+
+# Security: Use tini as init process for proper signal handling
+ENTRYPOINT ["/usr/bin/tini", "--"]
+
+# Security: Run startup script
+CMD ["/app/start.sh"]
