@@ -64,6 +64,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/generate", csrfProtect, requireAuth, validatePromptSession, apiRateLimit, (req, res) => promptController.generateResponse(req, res));
   app.get("/api/sessions", (req, res) => promptController.getPromptSessions(req, res));
 
+  // LLM Integration Routes
+  app.post("/api/llm/prepare-context", csrfProtect, requireAuth, apiRateLimit, (req, res) => promptController.prepareLLMContext(req, res));
+  
+  // Personal Memory Routes
+  app.post("/api/memory/store", csrfProtect, requireAuth, apiRateLimit, (req, res) => promptController.storeMemory(req, res));
+  app.get("/api/memory/retrieve", requireAuth, (req, res) => promptController.retrieveMemories(req, res));
+  app.get("/api/memory/stats", requireAuth, (req, res) => promptController.getMemoryStats(req, res));
+
   // Biometric Routes
   app.get("/api/biometric", (req, res) => biometricController.getBiometricData(req, res));
   app.get("/api/biometric/timeseries", (req, res) => biometricController.getBiometricTimeSeries(req, res));

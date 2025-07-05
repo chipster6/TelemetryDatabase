@@ -2,13 +2,16 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { IServiceContainer } from '../di/ServiceContainer';
 import { TOKENS } from '../di/tokens';
 import { Server } from 'http';
+import { BiometricLLMBridge } from '../services/integration/BiometricLLMBridge.js';
 
 export class WebSocketController {
   private wss!: WebSocketServer;
   private clients = new Set<WebSocket>();
   private biometricInterval?: NodeJS.Timeout;
+  private llmBridge: BiometricLLMBridge;
 
   constructor(private container: IServiceContainer, httpServer: Server) {
+    this.llmBridge = new BiometricLLMBridge();
     this.initializeWebSocketServer(httpServer);
     this.startBiometricDataGeneration();
   }
@@ -55,6 +58,10 @@ export class WebSocketController {
         // Handle unsubscription
         this.handleUnsubscription(ws, data.channel);
         break;
+      case 'llm_request':
+        // Handle LLM request with biometric context
+        this.handleLLMRequest(ws, data);
+        break;
       default:
         console.log('Unknown message type:', data.type);
     }
@@ -77,6 +84,80 @@ export class WebSocketController {
       channel,
       timestamp: Date.now()
     }));
+  }
+
+  private async handleLLMRequest(ws: WebSocket, data: any): Promise<void> {
+    try {
+      console.log('Processing LLM request via WebSocket:', data.userId);
+      
+      // Extract request data
+      const { userId, prompt, requestId } = data;
+      
+      if (!userId || !prompt) {
+        ws.send(JSON.stringify({
+          type: 'llm_error',
+          requestId,
+          error: 'Missing userId or prompt',
+          timestamp: Date.now()
+        }));
+        return;
+      }
+
+      // Get latest biometric data for the user
+      const biometricService = this.container.resolve(TOKENS.BiometricService);
+      const latestBiometricData = await biometricService.getLatestBiometricData(userId);
+      
+      if (!latestBiometricData) {
+        ws.send(JSON.stringify({
+          type: 'llm_error',
+          requestId,
+          error: 'No biometric data available for user',
+          timestamp: Date.now()
+        }));
+        return;
+      }
+
+      // Send acknowledgment
+      ws.send(JSON.stringify({
+        type: 'llm_request_received',
+        requestId,
+        userId,
+        timestamp: Date.now()
+      }));
+
+      // Process LLM request with biometric context
+      const response = await this.llmBridge.processLLMRequest(userId, prompt, latestBiometricData);
+      
+      // Send response back to client
+      ws.send(JSON.stringify({
+        type: 'llm_response',
+        requestId,
+        userId,
+        response: response.response,
+        metadata: response.metadata,
+        biometricMetadata: response.biometricMetadata,
+        timestamp: Date.now()
+      }));
+
+      // Broadcast LLM activity to all connected clients (optional)
+      this.broadcastToClients({
+        type: 'llm_activity',
+        userId,
+        activity: 'LLM request processed',
+        cognitiveLoad: response.biometricMetadata?.cognitiveLoad,
+        flowState: response.biometricMetadata?.flowState,
+        timestamp: Date.now()
+      });
+
+    } catch (error) {
+      console.error('Error processing LLM request:', error);
+      ws.send(JSON.stringify({
+        type: 'llm_error',
+        requestId: data.requestId,
+        error: 'Failed to process LLM request',
+        timestamp: Date.now()
+      }));
+    }
   }
 
   private startBiometricDataGeneration(): void {

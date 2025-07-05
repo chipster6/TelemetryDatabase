@@ -191,4 +191,155 @@ export class PromptController extends BaseController {
       this.handleError(error, res);
     }
   }
+
+  async prepareLLMContext(req: Request, res: Response): Promise<void> {
+    try {
+      const { userId, prompt } = req.body;
+      
+      if (!userId || !prompt) {
+        this.sendError(res, 400, "Missing required fields: userId and prompt");
+        return;
+      }
+
+      // Get biometric service
+      const biometricService = this.resolve(TOKENS.BiometricService);
+      
+      // Get latest biometric data for the user
+      const latestBiometricData = await biometricService.getLatestBiometricData(userId);
+      
+      if (!latestBiometricData) {
+        this.sendError(res, 404, "No biometric data available for user");
+        return;
+      }
+
+      // Initialize BiometricLLMBridge
+      const { BiometricLLMBridge } = await import('../services/integration/BiometricLLMBridge.js');
+      const llmBridge = new BiometricLLMBridge();
+
+      // Prepare biometric-aware LLM context
+      const llmRequest = await llmBridge.prepareLLMContext(userId, prompt, latestBiometricData);
+
+      this.sendSuccess(res, {
+        llmRequest,
+        biometricState: {
+          cognitiveLoad: llmRequest.biometricContext?.metadata.cognitiveLoad,
+          flowState: llmRequest.biometricContext?.metadata.flowState,
+          attentionLevel: llmRequest.biometricContext?.metadata.attentionLevel,
+          neurodivergentPatterns: llmRequest.biometricContext?.metadata.neurodivergentPatterns
+        }
+      });
+    } catch (error) {
+      console.error('Prepare LLM context error:', error);
+      this.handleError(error, res);
+    }
+  }
+
+  async storeMemory(req: Request, res: Response): Promise<void> {
+    try {
+      const { userId, sessionId, prompt, response, cognitiveLoad, attentionLevel, flowState, neurodivergentPatterns, contextualTags, satisfactionScore, completionTime } = req.body;
+      
+      if (!userId || !sessionId || !prompt || !response) {
+        this.sendError(res, 400, "Missing required fields: userId, sessionId, prompt, response");
+        return;
+      }
+
+      // Initialize PersonalMemoryService
+      const { PersonalMemoryService } = await import('../services/memory/PersonalMemoryService.js');
+      const memoryService = new PersonalMemoryService();
+      await memoryService.initialize();
+
+      // Store interaction in personal memory
+      const interactionData = {
+        userId,
+        sessionId,
+        prompt,
+        response,
+        timestamp: new Date(),
+        cognitiveLoad: cognitiveLoad || 0.5,
+        attentionLevel: attentionLevel || 0.5,
+        flowState: flowState || false,
+        neurodivergentPatterns: neurodivergentPatterns || [],
+        contextualTags: contextualTags || [],
+        satisfactionScore,
+        completionTime
+      };
+
+      await memoryService.storeInteraction(interactionData);
+
+      this.sendSuccess(res, {
+        message: "Memory stored successfully",
+        interactionId: `${userId}-${sessionId}-${Date.now()}`
+      });
+    } catch (error) {
+      console.error('Store memory error:', error);
+      this.handleError(error, res);
+    }
+  }
+
+  async retrieveMemories(req: Request, res: Response): Promise<void> {
+    try {
+      const { userId, query, cognitiveLoad, attentionLevel, flowState, neurodivergentPatterns, limit, relevanceThreshold } = req.query;
+      
+      if (!userId || !query) {
+        this.sendError(res, 400, "Missing required query parameters: userId and query");
+        return;
+      }
+
+      // Initialize PersonalMemoryService
+      const { PersonalMemoryService } = await import('../services/memory/PersonalMemoryService.js');
+      const memoryService = new PersonalMemoryService();
+      await memoryService.initialize();
+
+      // Build memory query
+      const memoryQuery = {
+        userId: userId as string,
+        query: query as string,
+        cognitiveState: cognitiveLoad || attentionLevel || flowState || neurodivergentPatterns ? {
+          cognitiveLoad: parseFloat(cognitiveLoad as string) || 0.5,
+          attentionLevel: parseFloat(attentionLevel as string) || 0.5,
+          flowState: flowState === 'true',
+          neurodivergentPatterns: neurodivergentPatterns ? (neurodivergentPatterns as string).split(',') : [],
+          timestamp: new Date()
+        } : undefined,
+        limit: limit ? parseInt(limit as string) : 10,
+        relevanceThreshold: relevanceThreshold ? parseFloat(relevanceThreshold as string) : 0.7
+      };
+
+      // Retrieve relevant memories
+      const memories = await memoryService.retrieveRelevant(memoryQuery);
+
+      this.sendSuccess(res, {
+        memories,
+        query: memoryQuery,
+        count: memories.length
+      });
+    } catch (error) {
+      console.error('Retrieve memories error:', error);
+      this.handleError(error, res);
+    }
+  }
+
+  async getMemoryStats(req: Request, res: Response): Promise<void> {
+    try {
+      const { userId } = req.query;
+      
+      if (!userId) {
+        this.sendError(res, 400, "Missing required query parameter: userId");
+        return;
+      }
+
+      // Initialize PersonalMemoryService
+      const { PersonalMemoryService } = await import('../services/memory/PersonalMemoryService.js');
+      const memoryService = new PersonalMemoryService();
+      await memoryService.initialize();
+
+      // Get memory statistics
+      const stats = await memoryService.getUserMemoryStats(userId as string);
+
+      this.sendSuccess(res, stats);
+    } catch (error) {
+      console.error('Get memory stats error:', error);
+      this.handleError(error, res);
+    }
+  }
 }
