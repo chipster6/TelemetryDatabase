@@ -13,6 +13,7 @@ export interface BiometricReading {
   galvanicSkinResponse?: number;
   timestamp: number;
   deviceId: string;
+  deviceSource?: string;
   quality: 'high' | 'medium' | 'low';
   confidence: number;
 }

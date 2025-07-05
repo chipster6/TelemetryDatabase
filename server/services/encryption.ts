@@ -91,8 +91,8 @@ export class PostQuantumEncryption {
   /**
    * Export key for cloud backup (security limited)
    */
-  exportKey(keyId: string): QuantumKeyPair | undefined {
-    const keyInfo = auditedPostQuantumCrypto.getKeyInfo(keyId);
+  async exportKey(keyId: string): Promise<QuantumKeyPair | undefined> {
+    const keyInfo = await auditedPostQuantumCrypto.getKeyInfo(keyId);
     if (!keyInfo) return undefined;
     
     // Return limited key info for backward compatibility

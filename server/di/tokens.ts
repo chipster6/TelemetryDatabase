@@ -9,6 +9,7 @@ export const TOKENS = {
   AnalyticsService: { name: 'AnalyticsService' } as ServiceToken<any>,
   WeaviateService: { name: 'WeaviateService' } as ServiceToken<any>,
   WeaviateClientProvider: { name: 'WeaviateClientProvider' } as ServiceToken<any>,
+  WeaviateConnectionManager: { name: 'WeaviateConnectionManager' } as ServiceToken<any>,
   WebAuthnService: { name: 'WebAuthnService' } as ServiceToken<any>,
   RAGService: { name: 'RAGService' } as ServiceToken<any>,
   NexisBrainService: { name: 'NexisBrainService' } as ServiceToken<any>,
@@ -21,6 +22,7 @@ export const TOKENS = {
   BiometricSecurityService: { name: 'BiometricSecurityService' } as ServiceToken<any>,
   NeurodivergentAnalyticsService: { name: 'NeurodivergentAnalyticsService' } as ServiceToken<any>,
   TrainingExportService: { name: 'TrainingExportService' } as ServiceToken<any>,
+  RedisService: { name: 'RedisService' } as ServiceToken<any>,
   // Controllers
   AuthController: { name: 'AuthController' } as ServiceToken<any>,
   PromptController: { name: 'PromptController' } as ServiceToken<any>,

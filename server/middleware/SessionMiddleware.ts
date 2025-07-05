@@ -3,6 +3,7 @@ import connectPgSimple from "connect-pg-simple";
 import { Request, Response, NextFunction } from "express";
 import { Pool } from "pg";
 import { ConfigurationManager } from "../config/ConfigurationManager";
+import { productionSecurityConfig } from "../config/ProductionSecurityConfig";
 import { SESSION, HTTP_STATUS } from "../constants/ApplicationConstants";
 import { Logger } from "../utils/Logger";
 
@@ -15,27 +16,39 @@ export class SessionMiddleware {
   private static logger = Logger.getInstance();
 
   /**
-   * Configure Express session with PostgreSQL store
-   * Extracted from index.ts lines 95-113
+   * Configure Express session with production-hardened settings
    */
   static configure(pool: Pool, config: ConfigurationManager) {
     const PgSession = connectPgSimple(session);
+    const sessionConfig = productionSecurityConfig.getSessionConfig();
     
     return session({
       store: new PgSession({
         pool: pool,
         tableName: 'sessions',
         createTableIfMissing: false,
+        pruneSessionInterval: 15 * 60, // Clean up sessions every 15 minutes
       }),
-      secret: config.get<string>('security.sessionSecret'),
-      resave: false,
-      saveUninitialized: false,
+      secret: sessionConfig.secret,
+      resave: sessionConfig.resave,
+      saveUninitialized: sessionConfig.saveUninitialized,
+      rolling: sessionConfig.rolling, // Extend session on activity
       cookie: {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production', // Always secure in production
-        maxAge: SESSION.MAX_AGE, // SECURITY FIX: 10 minutes for biometric data sensitivity
-        sameSite: 'strict', // CSRF protection
+        httpOnly: sessionConfig.httpOnly,
+        secure: sessionConfig.secure,
+        maxAge: sessionConfig.maxAge,
+        sameSite: sessionConfig.sameSite,
+        domain: sessionConfig.domain,
+        path: sessionConfig.path
       },
+      // Enhanced session configuration
+      name: 'tdb.sid', // Custom session name to avoid fingerprinting
+      proxy: process.env.NODE_ENV === 'production', // Trust proxy in production
+      genid: () => {
+        // Generate cryptographically secure session IDs
+        const crypto = require('crypto');
+        return crypto.randomBytes(32).toString('hex');
+      }
     });
   }
 

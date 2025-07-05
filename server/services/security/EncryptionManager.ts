@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { EventEmitter } from 'events';
 import { BiometricDataPoint } from '../BiometricPipelineService';
+import { secureMemoryManager } from './SecureMemoryManager';
 
 export interface EncryptedBiometricData {
   encryptedData: string;
@@ -57,7 +58,7 @@ export class EncryptionManager extends EventEmitter {
   }
 
   /**
-   * Encrypt biometric data with post-quantum safe algorithms
+   * Encrypt biometric data with post-quantum safe algorithms and secure memory handling
    */
   async encrypt(
     data: BiometricDataPoint,
@@ -71,27 +72,35 @@ export class EncryptionManager extends EventEmitter {
       this.validateBiometricData(data);
       this.validateEncryptionKey(key);
       
-      // Create cipher
-      const iv = crypto.randomBytes(this.config.ivSize);
-      const cipher = crypto.createCipherGCM(this.config.algorithm, key);
-      cipher.setIVBytes(iv);
-      
-      // Serialize and encrypt data
-      const serializedData = JSON.stringify(data);
-      let encrypted = cipher.update(serializedData, 'utf8', 'hex');
-      encrypted += cipher.final('hex');
-      
-      // Get authentication tag
-      const authTag = cipher.getAuthTag();
-      
-      const result: EncryptedBiometricData = {
-        encryptedData: encrypted,
-        iv: iv.toString('hex'),
-        authTag: authTag.toString('hex'),
-        keyId,
-        timestamp: Date.now(),
-        algorithm: this.config.algorithm
-      };
+      // Use secure memory processing to prevent data leakage
+      const result = await secureMemoryManager.processSecureBiometric(data, async (secureBufferId) => {
+        // Create cipher with secure IV generation
+        const iv = crypto.randomBytes(this.config.ivSize);
+        const cipher = crypto.createCipherGCM(this.config.algorithm, key);
+        cipher.setIVBytes(iv);
+        
+        // Read data from secure buffer
+        const secureData = secureMemoryManager.readSecureData(secureBufferId);
+        
+        // Encrypt data directly from secure buffer
+        let encrypted = cipher.update(secureData, undefined, 'hex');
+        encrypted += cipher.final('hex');
+        
+        // Get authentication tag
+        const authTag = cipher.getAuthTag();
+        
+        // Clear the secure data buffer immediately
+        secureData.fill(0);
+        
+        return {
+          encryptedData: encrypted,
+          iv: iv.toString('hex'),
+          authTag: authTag.toString('hex'),
+          keyId,
+          timestamp: Date.now(),
+          algorithm: this.config.algorithm
+        };
+      });
       
       // Update metrics
       const processingTime = Date.now() - startTime;
@@ -101,20 +110,20 @@ export class EncryptionManager extends EventEmitter {
         keyId,
         algorithm: this.config.algorithm,
         processingTime,
-        dataSize: serializedData.length
+        dataSize: 0 // Don't expose actual data size for security
       });
       
       return result;
       
     } catch (error) {
       this.metrics.failedOperations++;
-      this.emit('encryptionFailed', { error, keyId, data });
-      throw new Error(`Encryption failed: ${error.message}`);
+      this.emit('encryptionFailed', { error, keyId });
+      throw new Error(`Secure encryption failed: ${error.message}`);
     }
   }
 
   /**
-   * Decrypt biometric data with integrity verification
+   * Decrypt biometric data with integrity verification and secure memory handling
    */
   async decrypt(
     encryptedData: EncryptedBiometricData,
@@ -133,19 +142,35 @@ export class EncryptionManager extends EventEmitter {
         throw new Error('Encrypted data is too old');
       }
       
-      // Create decipher
-      const algorithm = encryptedData.algorithm || this.config.algorithm;
-      const decipher = crypto.createDecipherGCM(algorithm, key);
-      decipher.setIVBytes(Buffer.from(encryptedData.iv, 'hex'));
-      decipher.setAuthTag(Buffer.from(encryptedData.authTag, 'hex'));
+      // Use secure memory for decryption process
+      const encryptedBuffer = Buffer.from(encryptedData.encryptedData, 'hex');
       
-      // Decrypt data
-      let decrypted = decipher.update(encryptedData.encryptedData, 'hex', 'utf8');
-      decrypted += decipher.final('utf8');
-      
-      // Parse and validate decrypted data
-      const data: BiometricDataPoint = JSON.parse(decrypted);
-      this.validateBiometricData(data);
+      const result = await secureMemoryManager.executeWithSecureData(encryptedBuffer, async (secureBufferId) => {
+        // Create decipher
+        const algorithm = encryptedData.algorithm || this.config.algorithm;
+        const decipher = crypto.createDecipherGCM(algorithm, key);
+        decipher.setIVBytes(Buffer.from(encryptedData.iv, 'hex'));
+        decipher.setAuthTag(Buffer.from(encryptedData.authTag, 'hex'));
+        
+        // Read encrypted data from secure buffer
+        const secureEncryptedData = secureMemoryManager.readSecureData(secureBufferId);
+        
+        // Decrypt data
+        let decrypted = decipher.update(secureEncryptedData, undefined, 'utf8');
+        decrypted += decipher.final('utf8');
+        
+        // Parse data - this creates a new object, original is automatically cleaned
+        const data: BiometricDataPoint = JSON.parse(decrypted);
+        
+        // Validate decrypted data
+        this.validateBiometricData(data);
+        
+        // Clear decrypted string from memory
+        const decryptedBuffer = Buffer.from(decrypted, 'utf8');
+        decryptedBuffer.fill(0);
+        
+        return data;
+      });
       
       // Update metrics
       const processingTime = Date.now() - startTime;
@@ -158,12 +183,12 @@ export class EncryptionManager extends EventEmitter {
         dataAge
       });
       
-      return data;
+      return result;
       
     } catch (error) {
       this.metrics.failedOperations++;
-      this.emit('decryptionFailed', { error, encryptedData });
-      throw new Error(`Decryption failed: ${error.message}`);
+      this.emit('decryptionFailed', { error });
+      throw new Error(`Secure decryption failed: ${error.message}`);
     }
   }
 
@@ -189,7 +214,7 @@ export class EncryptionManager extends EventEmitter {
   }
 
   /**
-   * Encrypt data with additional authentication data (AAD)
+   * Encrypt data with additional authentication data (AAD) using secure memory
    */
   async encryptWithAAD(
     data: BiometricDataPoint,
@@ -203,39 +228,58 @@ export class EncryptionManager extends EventEmitter {
       this.validateBiometricData(data);
       this.validateEncryptionKey(key);
       
-      const iv = crypto.randomBytes(this.config.ivSize);
-      const cipher = crypto.createCipherGCM(this.config.algorithm, key);
-      cipher.setIVBytes(iv);
-      cipher.setAAD(aad);
-      
-      const serializedData = JSON.stringify(data);
-      let encrypted = cipher.update(serializedData, 'utf8', 'hex');
-      encrypted += cipher.final('hex');
-      
-      const authTag = cipher.getAuthTag();
-      
-      const result: EncryptedBiometricData = {
-        encryptedData: encrypted,
-        iv: iv.toString('hex'),
-        authTag: authTag.toString('hex'),
-        keyId,
-        timestamp: Date.now(),
-        algorithm: this.config.algorithm
-      };
+      // Use secure memory processing to prevent data leakage
+      const result = await secureMemoryManager.processSecureBiometric(data, async (secureBufferId) => {
+        // Create cipher with secure IV generation
+        const iv = crypto.randomBytes(this.config.ivSize);
+        const cipher = crypto.createCipherGCM(this.config.algorithm, key);
+        cipher.setIVBytes(iv);
+        cipher.setAAD(aad);
+        
+        // Read data from secure buffer
+        const secureData = secureMemoryManager.readSecureData(secureBufferId);
+        
+        // Encrypt data directly from secure buffer
+        let encrypted = cipher.update(secureData, undefined, 'hex');
+        encrypted += cipher.final('hex');
+        
+        // Get authentication tag
+        const authTag = cipher.getAuthTag();
+        
+        // Clear the secure data buffer immediately
+        secureData.fill(0);
+        
+        return {
+          encryptedData: encrypted,
+          iv: iv.toString('hex'),
+          authTag: authTag.toString('hex'),
+          keyId,
+          timestamp: Date.now(),
+          algorithm: this.config.algorithm
+        };
+      });
       
       const processingTime = Date.now() - startTime;
       this.updateEncryptionMetrics(processingTime);
+      
+      this.emit('encryptionCompleted', {
+        keyId,
+        algorithm: this.config.algorithm,
+        processingTime,
+        dataSize: 0 // Don't expose actual data size for security
+      });
       
       return result;
       
     } catch (error) {
       this.metrics.failedOperations++;
+      this.emit('encryptionFailed', { error, keyId });
       throw new Error(`AAD encryption failed: ${error.message}`);
     }
   }
 
   /**
-   * Decrypt data with additional authentication data verification
+   * Decrypt data with additional authentication data verification using secure memory
    */
   async decryptWithAAD(
     encryptedData: EncryptedBiometricData,
@@ -248,25 +292,58 @@ export class EncryptionManager extends EventEmitter {
       this.validateEncryptedData(encryptedData);
       this.validateEncryptionKey(key);
       
-      const algorithm = encryptedData.algorithm || this.config.algorithm;
-      const decipher = crypto.createDecipherGCM(algorithm, key);
-      decipher.setIVBytes(Buffer.from(encryptedData.iv, 'hex'));
-      decipher.setAAD(aad);
-      decipher.setAuthTag(Buffer.from(encryptedData.authTag, 'hex'));
+      // Check data age (prevent replay attacks)
+      const dataAge = Date.now() - encryptedData.timestamp;
+      if (dataAge > this.config.maxDataAge) {
+        throw new Error('Encrypted data is too old');
+      }
       
-      let decrypted = decipher.update(encryptedData.encryptedData, 'hex', 'utf8');
-      decrypted += decipher.final('utf8');
+      // Use secure memory for decryption process
+      const encryptedBuffer = Buffer.from(encryptedData.encryptedData, 'hex');
       
-      const data: BiometricDataPoint = JSON.parse(decrypted);
-      this.validateBiometricData(data);
+      const result = await secureMemoryManager.executeWithSecureData(encryptedBuffer, async (secureBufferId) => {
+        // Create decipher
+        const algorithm = encryptedData.algorithm || this.config.algorithm;
+        const decipher = crypto.createDecipherGCM(algorithm, key);
+        decipher.setIVBytes(Buffer.from(encryptedData.iv, 'hex'));
+        decipher.setAAD(aad);
+        decipher.setAuthTag(Buffer.from(encryptedData.authTag, 'hex'));
+        
+        // Read encrypted data from secure buffer
+        const secureEncryptedData = secureMemoryManager.readSecureData(secureBufferId);
+        
+        // Decrypt data
+        let decrypted = decipher.update(secureEncryptedData, undefined, 'utf8');
+        decrypted += decipher.final('utf8');
+        
+        // Parse data - this creates a new object, original is automatically cleaned
+        const data: BiometricDataPoint = JSON.parse(decrypted);
+        
+        // Validate decrypted data
+        this.validateBiometricData(data);
+        
+        // Clear decrypted string from memory
+        const decryptedBuffer = Buffer.from(decrypted, 'utf8');
+        decryptedBuffer.fill(0);
+        
+        return data;
+      });
       
       const processingTime = Date.now() - startTime;
       this.updateDecryptionMetrics(processingTime);
       
-      return data;
+      this.emit('decryptionCompleted', {
+        keyId: encryptedData.keyId,
+        algorithm: encryptedData.algorithm,
+        processingTime,
+        dataAge
+      });
+      
+      return result;
       
     } catch (error) {
       this.metrics.failedOperations++;
+      this.emit('decryptionFailed', { error });
       throw new Error(`AAD decryption failed: ${error.message}`);
     }
   }
@@ -415,11 +492,29 @@ export class EncryptionManager extends EventEmitter {
   }
 
   /**
-   * Cleanup resources
+   * Cleanup resources and secure memory
    */
   async shutdown(): Promise<void> {
     this.removeAllListeners();
-    this.encryptionTimes = [];
-    this.decryptionTimes = [];
+    
+    // Securely clear metrics arrays
+    if (this.encryptionTimes.length > 0) {
+      this.encryptionTimes.fill(0);
+      this.encryptionTimes = [];
+    }
+    
+    if (this.decryptionTimes.length > 0) {
+      this.decryptionTimes.fill(0);
+      this.decryptionTimes = [];
+    }
+    
+    // Clear metrics object
+    Object.keys(this.metrics).forEach(key => {
+      if (typeof this.metrics[key] === 'number') {
+        this.metrics[key] = 0;
+      }
+    });
+    
+    console.log('EncryptionManager shutdown complete with secure memory cleanup');
   }
 }

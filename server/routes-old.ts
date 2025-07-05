@@ -246,6 +246,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         req.session.userId = user.id;
         req.session.username = user.username;
         req.session.role = user.role || 'user'; // Set role in session for authorization
+        req.session.userRole = user.role || 'user'; // Set userRole for consistency
         
         req.session.save((err) => {
           if (err) {

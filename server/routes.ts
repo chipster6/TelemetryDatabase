@@ -22,22 +22,12 @@ import {
   auditLog
 } from './middleware/authorization.js';
 import { SecurityMiddleware } from './middleware/SecurityMiddleware.js';
+import { PerformanceMiddleware } from './middleware/PerformanceMiddleware.js';
+import { SecurityEndpoints } from './routes/security-endpoints.js';
+import { HealthEndpoints } from './routes/health-endpoints.js';
+import { PerformanceEndpoints } from './routes/performance-endpoints.js';
 
-// Simple rate limiting for API endpoints
-const requests = new Map<string, number[]>();
-const rateLimit = (ip: string, maxRequests: number = 100, windowMs: number = 60000): boolean => {
-  const now = Date.now();
-  if (!requests.has(ip)) requests.set(ip, []);
-  
-  const userRequests = requests.get(ip)!;
-  const validRequests = userRequests.filter(time => now - time < windowMs);
-  
-  if (validRequests.length >= maxRequests) return false;
-  
-  validRequests.push(now);
-  requests.set(ip, validRequests);
-  return true;
-};
+// REMOVED: Simple in-memory rate limiting replaced with Redis-backed SecurityMiddleware rate limiting
 
 export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
@@ -51,16 +41,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const promptController = globalContainer.resolve(TOKENS.PromptController);
   const biometricController = globalContainer.resolve(TOKENS.BiometricController);
 
-  // Rate limiting middleware
-  const applyRateLimit = (req: any, res: any, next: any) => {
-    if (!rateLimit(req.ip || 'unknown')) {
-      return res.status(429).json({ error: "Too many requests" });
-    }
-    next();
-  };
+  // Rate limiting middleware - use Redis-backed SecurityMiddleware
+  const apiRateLimit = SecurityMiddleware.rateLimiting().api;
 
   // CSRF protection middleware
   const csrfProtect = SecurityMiddleware.csrfProtection();
+
+  // Performance monitoring middleware - apply globally
+  app.use(PerformanceMiddleware.monitor());
+  app.use(PerformanceMiddleware.rateLimitMonitor());
+  app.use(PerformanceMiddleware.memoryMonitor());
 
   // Authentication Routes
   app.post("/api/login", validateCredentials, (req, res) => authController.login(req, res));
@@ -71,7 +61,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Prompt Routes
   app.get("/api/templates", requireAuth, (req, res) => promptController.getPromptTemplates(req, res));
   app.post("/api/templates", csrfProtect, authorizeTemplateAccess, validatePromptTemplate, (req, res) => promptController.createPromptTemplate(req, res));
-  app.post("/api/generate", csrfProtect, requireAuth, validatePromptSession, applyRateLimit, (req, res) => promptController.generateResponse(req, res));
+  app.post("/api/generate", csrfProtect, requireAuth, validatePromptSession, apiRateLimit, (req, res) => promptController.generateResponse(req, res));
   app.get("/api/sessions", (req, res) => promptController.getPromptSessions(req, res));
 
   // Biometric Routes
@@ -81,14 +71,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/biometric", csrfProtect, authorizeBiometricAccess, validateBiometricData, (req, res) => biometricController.collectBiometricData(req, res));
   app.get("/api/biometric/analytics", (req, res) => biometricController.getBiometricAnalytics(req, res));
 
-  // Health check endpoint
-  app.get("/api/health", (req, res) => {
-    res.json({ 
-      status: "healthy", 
-      timestamp: new Date().toISOString(),
-      websocketClients: wsController.getConnectedClientsCount()
-    });
-  });
+  // Health check endpoints
+  app.get("/api/health", HealthEndpoints.getLegacyHealth); // Backward compatibility
+  app.get("/api/health/comprehensive", HealthEndpoints.getComprehensiveHealth);
+  app.get("/api/health/quick", HealthEndpoints.getQuickHealth);
+  app.get("/api/health/database", HealthEndpoints.getDatabaseHealth);
+  app.get("/api/health/redis", HealthEndpoints.getRedisHealth);
+  app.get("/api/health/weaviate", HealthEndpoints.getWeaviateHealth);
+  app.get("/api/health/readiness", HealthEndpoints.getReadiness);
+  app.get("/api/health/liveness", HealthEndpoints.getLiveness);
+
+  // Security monitoring endpoints (IP-restricted)
+  app.get("/api/security/memory-stats", ...SecurityEndpoints.getMemoryStats);
+  app.post("/api/security/memory-cleanup", ...SecurityEndpoints.forceMemoryCleanup);
+  app.get("/api/security/comprehensive-status", ...SecurityEndpoints.getSecurityStatus);
+  app.post("/api/security/test-memory", ...SecurityEndpoints.testSecureMemory);
+
+  // Performance monitoring endpoints
+  app.get("/api/performance/metrics", PerformanceEndpoints.getCurrentMetrics);
+  app.get("/api/performance/summary", PerformanceEndpoints.getPerformanceSummary);
+  app.get("/api/performance/trends", PerformanceEndpoints.getPerformanceTrends);
+  app.get("/api/performance/component/:component", PerformanceEndpoints.getComponentMetrics);
+  app.get("/api/performance/alerts", PerformanceEndpoints.getPerformanceAlerts);
+  app.post("/api/performance/alerts", csrfProtect, PerformanceEndpoints.createPerformanceAlert);
+  app.delete("/api/performance/alerts/:alertId", csrfProtect, PerformanceEndpoints.deletePerformanceAlert);
+  app.get("/api/performance/export", PerformanceEndpoints.exportPerformanceData);
+  app.get("/api/performance/realtime", PerformanceEndpoints.getRealtimeMetrics);
+  app.post("/api/performance/collect", csrfProtect, PerformanceEndpoints.forceMetricsCollection);
+
+  // Error handling middleware for performance monitoring
+  app.use(PerformanceMiddleware.errorMonitor());
 
   return httpServer;
 }

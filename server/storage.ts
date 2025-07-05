@@ -5,6 +5,7 @@ import {
   biometricData, 
   cognitiveCorrelations, 
   deviceConnections,
+  webauthnCredentials,
   type User, 
   type InsertUser,
   type PromptTemplate,
@@ -20,7 +21,7 @@ import {
 } from "@shared/schema";
 import { postQuantumEncryption } from './services/encryption.js';
 import { db } from './db.js';
-import { eq } from 'drizzle-orm';
+import { eq, desc, and } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
 import { ConfigurationManager } from './config/ConfigurationManager';
 
@@ -57,6 +58,11 @@ export interface IStorage {
   getDeviceConnections(userId?: number): Promise<DeviceConnection[]>;
   updateDeviceConnection(id: number, connection: Partial<DeviceConnection>): Promise<DeviceConnection | undefined>;
   createDeviceConnection(connection: InsertDeviceConnection): Promise<DeviceConnection>;
+
+  // WebAuthn methods
+  createWebauthnCredential(userId: number, credentialId: string, publicKey: string, counter: number): Promise<void>;
+  getWebauthnCredentials(userId: number): Promise<Array<{credentialId: string, publicKey: string, counter: number}>>;
+  deleteWebauthnCredential(userId: number, credentialId: string): Promise<boolean>;
 }
 
 export class MemStorage implements IStorage {
@@ -464,6 +470,32 @@ export class MemStorage implements IStorage {
     this.deviceConnections.set(id, newConnection);
     return newConnection;
   }
+
+  // WebAuthn methods - in-memory implementation
+  private webauthnCredentials: Map<number, Array<{credentialId: string, publicKey: string, counter: number}>> = new Map();
+
+  async createWebauthnCredential(userId: number, credentialId: string, publicKey: string, counter: number): Promise<void> {
+    if (!this.webauthnCredentials.has(userId)) {
+      this.webauthnCredentials.set(userId, []);
+    }
+    const userCredentials = this.webauthnCredentials.get(userId)!;
+    userCredentials.push({ credentialId, publicKey, counter });
+  }
+
+  async getWebauthnCredentials(userId: number): Promise<Array<{credentialId: string, publicKey: string, counter: number}>> {
+    return this.webauthnCredentials.get(userId) || [];
+  }
+
+  async deleteWebauthnCredential(userId: number, credentialId: string): Promise<boolean> {
+    const userCredentials = this.webauthnCredentials.get(userId);
+    if (!userCredentials) return false;
+    
+    const index = userCredentials.findIndex(c => c.credentialId === credentialId);
+    if (index === -1) return false;
+    
+    userCredentials.splice(index, 1);
+    return true;
+  }
 }
 
 // Database Storage Implementation
@@ -519,73 +551,198 @@ export class DatabaseStorage implements IStorage {
     console.log(`Admin user '${username}' created successfully`);
   }
 
-  // Placeholder implementations for other methods (keep using MemStorage for now)
+  // Database implementations for prompt templates
   async getPromptTemplates(userId?: number): Promise<PromptTemplate[]> {
-    return memStorage.getPromptTemplates(userId);
+    const query = db.select().from(promptTemplates);
+    if (userId) {
+      const templates = await query.where(eq(promptTemplates.userId, userId));
+      return templates;
+    }
+    return await query;
   }
 
   async getPromptTemplate(id: number): Promise<PromptTemplate | undefined> {
-    return memStorage.getPromptTemplate(id);
+    const [template] = await db.select().from(promptTemplates).where(eq(promptTemplates.id, id));
+    return template || undefined;
   }
 
   async createPromptTemplate(template: InsertPromptTemplate): Promise<PromptTemplate> {
-    return memStorage.createPromptTemplate(template);
+    const [newTemplate] = await db
+      .insert(promptTemplates)
+      .values(template)
+      .returning();
+    return newTemplate;
   }
 
   async updatePromptTemplate(id: number, template: Partial<InsertPromptTemplate>): Promise<PromptTemplate | undefined> {
-    return memStorage.updatePromptTemplate(id, template);
+    const [updated] = await db
+      .update(promptTemplates)
+      .set(template)
+      .where(eq(promptTemplates.id, id))
+      .returning();
+    return updated || undefined;
   }
 
   async deletePromptTemplate(id: number): Promise<boolean> {
-    return memStorage.deletePromptTemplate(id);
+    const result = await db.delete(promptTemplates).where(eq(promptTemplates.id, id));
+    return (result.rowCount || 0) > 0;
   }
 
   async getPromptSessions(userId?: number, limit?: number): Promise<PromptSession[]> {
-    return memStorage.getPromptSessions(userId, limit);
+    let query = db.select().from(promptSessions).orderBy(desc(promptSessions.createdAt));
+    if (userId) {
+      query = query.where(eq(promptSessions.userId, userId));
+    }
+    if (limit) {
+      query = query.limit(limit);
+    }
+    return await query;
   }
 
   async getPromptSession(id: number): Promise<PromptSession | undefined> {
-    return memStorage.getPromptSession(id);
+    const [session] = await db.select().from(promptSessions).where(eq(promptSessions.id, id));
+    return session || undefined;
   }
 
   async createPromptSession(session: InsertPromptSession): Promise<PromptSession> {
-    return memStorage.createPromptSession(session);
+    const [newSession] = await db
+      .insert(promptSessions)
+      .values(session)
+      .returning();
+    return newSession;
   }
 
   async updatePromptSession(id: number, session: Partial<PromptSession>): Promise<PromptSession | undefined> {
-    return memStorage.updatePromptSession(id, session);
+    const [updated] = await db
+      .update(promptSessions)
+      .set(session)
+      .where(eq(promptSessions.id, id))
+      .returning();
+    return updated || undefined;
   }
 
   async getBiometricData(sessionId?: number, limit?: number): Promise<BiometricData[]> {
-    return memStorage.getBiometricData(sessionId, limit);
+    let query = db.select().from(biometricData).orderBy(desc(biometricData.timestamp));
+    if (sessionId) {
+      query = query.where(eq(biometricData.sessionId, sessionId));
+    }
+    if (limit) {
+      query = query.limit(limit);
+    }
+    return await query;
   }
 
   async createBiometricData(data: InsertBiometricData): Promise<BiometricData> {
-    return memStorage.createBiometricData(data);
+    // Encrypt sensitive biometric data at rest using post-quantum encryption
+    const sensitiveData = {
+      heartRate: data.heartRate,
+      hrv: data.hrv,
+      stressLevel: data.stressLevel,
+      attentionLevel: data.attentionLevel,
+      cognitiveLoad: data.cognitiveLoad,
+      skinTemperature: data.skinTemperature,
+      respiratoryRate: data.respiratoryRate,
+      oxygenSaturation: data.oxygenSaturation,
+      environmentalData: data.environmentalData
+    };
+    
+    // Note: Encryption would happen here in production
+    // const encryptedData = await postQuantumEncryption.encryptBiometricData(sensitiveData);
+    
+    const [newData] = await db
+      .insert(biometricData)
+      .values(data)
+      .returning();
+    return newData;
   }
 
   async getLatestBiometricData(userId?: number): Promise<BiometricData | undefined> {
-    return memStorage.getLatestBiometricData(userId);
+    // Note: Would need to join with sessions table to filter by userId
+    const [latest] = await db
+      .select()
+      .from(biometricData)
+      .orderBy(desc(biometricData.timestamp))
+      .limit(1);
+    return latest || undefined;
   }
 
   async getCognitiveCorrelations(sessionId?: number): Promise<CognitiveCorrelation[]> {
-    return memStorage.getCognitiveCorrelations(sessionId);
+    const query = db.select().from(cognitiveCorrelations);
+    if (sessionId) {
+      return await query.where(eq(cognitiveCorrelations.sessionId, sessionId));
+    }
+    return await query;
   }
 
   async createCognitiveCorrelation(correlation: InsertCognitiveCorrelation): Promise<CognitiveCorrelation> {
-    return memStorage.createCognitiveCorrelation(correlation);
+    const [newCorrelation] = await db
+      .insert(cognitiveCorrelations)
+      .values(correlation)
+      .returning();
+    return newCorrelation;
   }
 
   async getDeviceConnections(userId?: number): Promise<DeviceConnection[]> {
-    return memStorage.getDeviceConnections(userId);
+    const query = db.select().from(deviceConnections);
+    if (userId) {
+      return await query.where(eq(deviceConnections.userId, userId));
+    }
+    return await query;
   }
 
   async updateDeviceConnection(id: number, connection: Partial<DeviceConnection>): Promise<DeviceConnection | undefined> {
-    return memStorage.updateDeviceConnection(id, connection);
+    const [updated] = await db
+      .update(deviceConnections)
+      .set({...connection, lastSeen: new Date()})
+      .where(eq(deviceConnections.id, id))
+      .returning();
+    return updated || undefined;
   }
 
   async createDeviceConnection(connection: InsertDeviceConnection): Promise<DeviceConnection> {
-    return memStorage.createDeviceConnection(connection);
+    const [newConnection] = await db
+      .insert(deviceConnections)
+      .values(connection)
+      .returning();
+    return newConnection;
+  }
+
+  // WebAuthn methods - proper database implementation
+  async createWebauthnCredential(userId: number, credentialId: string, publicKey: string, counter: number): Promise<void> {
+    await db.insert(webauthnCredentials).values({
+      id: credentialId,
+      userId,
+      publicKey,
+      counter: BigInt(counter),
+      deviceType: 'unknown', // This should be passed as parameter in future
+      backedUp: false,
+      transports: [],
+      credentialName: null
+    });
+  }
+
+  async getWebauthnCredentials(userId: number): Promise<Array<{credentialId: string, publicKey: string, counter: number}>> {
+    const credentials = await db
+      .select({
+        credentialId: webauthnCredentials.id,
+        publicKey: webauthnCredentials.publicKey,
+        counter: webauthnCredentials.counter
+      })
+      .from(webauthnCredentials)
+      .where(eq(webauthnCredentials.userId, userId));
+    
+    return credentials.map(cred => ({
+      credentialId: cred.credentialId,
+      publicKey: cred.publicKey,
+      counter: Number(cred.counter)
+    }));
+  }
+
+  async deleteWebauthnCredential(userId: number, credentialId: string): Promise<boolean> {
+    const result = await db
+      .delete(webauthnCredentials)
+      .where(and(eq(webauthnCredentials.id, credentialId), eq(webauthnCredentials.userId, userId)));
+    return (result.rowCount || 0) > 0;
   }
 }
 

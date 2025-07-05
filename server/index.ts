@@ -15,15 +15,29 @@ const app = express();
 import { globalContainer } from "./di/bootstrap";
 const config = globalContainer.resolve(TOKENS.ConfigurationManager);
 
-// Initialize Redis service
-import { redisService } from "./services/redis.service";
-redisService.initialize().catch(console.error);
+// Initialize and validate production security configuration
+import { productionSecurityConfig } from "./config/ProductionSecurityConfig";
+productionSecurityConfig.logSecuritySummary();
 
-// Initialize WeaviateClientProvider as centralized client manager
-import { weaviateClientProvider } from "./services/shared/WeaviateClientProvider";
-weaviateClientProvider.initialize().catch((error) => {
-  console.warn('WeaviateClientProvider failed to initialize - vector database features will be limited:', error.message);
+// Initialize centralized Redis connection manager
+import { redisConnectionManager } from "./services/RedisConnectionManager";
+redisConnectionManager.initialize().catch(console.error);
+
+// Initialize enhanced Weaviate Connection Manager with pooling
+import { weaviateConnectionManager } from "./services/WeaviateConnectionManager";
+weaviateConnectionManager.initialize({
+  minConnections: 2,
+  maxConnections: 8,
+  acquireTimeoutMs: 10000,
+  idleTimeoutMs: 300000,
+  healthCheckIntervalMs: 30000
+}).catch((error) => {
+  console.warn('Weaviate Connection Manager failed to initialize - vector database features will be limited:', error.message);
 });
+
+// Initialize secure memory manager for cryptographic protection
+import { secureMemoryManager } from "./services/security/SecureMemoryManager";
+console.log('🔐 Secure Memory Manager initialized for cryptographic material protection');
 
 // Initialize NexisBrain service with proper error handling
 import { nexisBrainService } from "./services/nexis-brain";

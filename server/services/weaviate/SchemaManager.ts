@@ -375,7 +375,12 @@ export class SchemaManager {
       const exists = await this.schemaExists(schema.class);
       
       if (!exists) {
-        await this.client.schema.classCreator().withClass(schema).do();
+        await this.client.collections.create({
+          name: schema.class,
+          description: schema.description,
+          properties: schema.properties,
+          vectorizers: schema.vectorizer ? { default: schema.vectorizer } : undefined
+        });
         console.log(`✓ Created Weaviate schema: ${schema.class}`);
       } else {
         console.log(`✓ Weaviate schema already exists: ${schema.class}`);
@@ -388,8 +393,8 @@ export class SchemaManager {
 
   async schemaExists(className: string): Promise<boolean> {
     try {
-      const schema = await this.client.schema.getter().do();
-      return schema.classes.some((cls: any) => cls.class === className);
+      const collections = await this.client.collections.listAll();
+      return Object.keys(collections).includes(className);
     } catch (error) {
       console.error(`Error checking if schema exists for ${className}:`, error);
       return false;
@@ -398,18 +403,20 @@ export class SchemaManager {
 
   async getSchemaInfo(className: string): Promise<SchemaInfo | null> {
     try {
-      const schema = await this.client.schema.getter().do();
-      const classSchema = schema.classes.find((cls: any) => cls.class === className);
+      const collections = await this.client.collections.listAll();
+      const collection = collections[className];
       
-      if (!classSchema) {
+      if (!collection) {
         return null;
       }
 
+      const config = await this.client.collections.get(className).config.get();
+
       return {
-        className: classSchema.class,
-        description: classSchema.description || '',
-        properties: classSchema.properties || [],
-        vectorizer: classSchema.vectorizer || '',
+        className: className,
+        description: config.description || '',
+        properties: config.properties || [],
+        vectorizer: config.vectorizer || '',
         exists: true
       };
     } catch (error) {
@@ -424,11 +431,10 @@ export class SchemaManager {
         switch (change.action) {
           case 'add':
             if (change.property) {
-              await this.client.schema
-                .propertyCreator()
-                .withClassName(change.className)
-                .withProperty(change.property)
-                .do();
+              const collection = this.client.collections.get(change.className);
+              await collection.config.update({
+                properties: [change.property]
+              });
               console.log(`✓ Added property ${change.property.name} to ${change.className}`);
             }
             break;
@@ -438,7 +444,7 @@ export class SchemaManager {
               // Note: Weaviate doesn't support property deletion, only class deletion
               console.warn(`Property deletion not supported in Weaviate: ${change.property.name}`);
             } else {
-              await this.client.schema.classDeleter().withClassName(change.className).do();
+              await this.client.collections.delete(change.className);
               console.log(`✓ Deleted class ${change.className}`);
             }
             break;
@@ -456,7 +462,7 @@ export class SchemaManager {
 
   async listClasses(): Promise<string[]> {
     try {
-      const schema = await this.client.schema.getter().do();
+      const collections = await this.client.collections.listAll();
       return schema.classes.map((cls: any) => cls.class);
     } catch (error) {
       console.error('Error listing schema classes:', error);
@@ -466,7 +472,7 @@ export class SchemaManager {
 
   async deleteClass(className: string): Promise<void> {
     try {
-      await this.client.schema.classDeleter().withClassName(className).do();
+      await this.client.collections.delete(className);
       console.log(`✓ Deleted Weaviate class: ${className}`);
     } catch (error) {
       console.error(`Failed to delete class ${className}:`, error);

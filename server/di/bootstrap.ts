@@ -18,6 +18,8 @@ import { trainingExportService } from '../services/training-export.service';
 import { ragService } from '../services/rag.service';
 import { nexisBrainService } from '../services/nexis-brain';
 import { weaviateClientProvider } from '../services/shared/WeaviateClientProvider';
+import { weaviateConnectionManager } from '../services/WeaviateConnectionManager';
+import { redisConnectionManager } from '../services/RedisConnectionManager';
 import { AuthController } from '../controllers/AuthController';
 import { PromptController } from '../controllers/PromptController';
 import { BiometricController } from '../controllers/BiometricController';
@@ -30,6 +32,7 @@ export function bootstrapDI(): ServiceContainer {
   
   // Database services
   container.registerSingleton(TOKENS.DatabaseService, () => new DatabaseStorage());
+  container.registerSingleton(TOKENS.RedisService, () => redisConnectionManager.getClient());
   
   // Security services
   container.registerSingleton(TOKENS.EncryptionService, () => postQuantumEncryption);
@@ -38,15 +41,30 @@ export function bootstrapDI(): ServiceContainer {
   
   // Biometric services
   container.registerSingleton(TOKENS.BiometricService, () => biometricService);
-  container.registerSingleton(TOKENS.BiometricPipelineService, () => new BiometricPipelineService(container));
-  container.registerSingleton(TOKENS.BiometricPerformanceService, () => new BiometricPerformanceService(container));
+  container.registerSingleton(TOKENS.BiometricPipelineService, () => {
+    const redis = container.resolve(TOKENS.RedisService);
+    const weaviate = container.resolve(TOKENS.WeaviateClientProvider);
+    return new BiometricPipelineService(weaviate, redis);
+  });
+  container.registerSingleton(TOKENS.BiometricPerformanceService, () => {
+    const redis = container.resolve(TOKENS.RedisService);
+    return new BiometricPerformanceService(redis, {
+      connectionPool: { min: 2, max: 10, acquireTimeoutMillis: 5000, createTimeoutMillis: 3000 },
+      streamProcessing: { batchSize: 100, flushIntervalMs: 1000, maxConcurrency: 4, bufferSize: 1000 }
+    });
+  });
   
   // Analytics services
   container.registerSingleton(TOKENS.AnalyticsService, () => analyticsService);
-  container.registerSingleton(TOKENS.NeurodivergentAnalyticsService, () => new NeurodivergentAnalyticsService(container));
+  container.registerSingleton(TOKENS.NeurodivergentAnalyticsService, () => {
+    const redis = container.resolve(TOKENS.RedisService);
+    const weaviate = container.resolve(TOKENS.WeaviateClientProvider);
+    return new NeurodivergentAnalyticsService(weaviate, redis);
+  });
   
   // Vector database services
   container.registerSingleton(TOKENS.WeaviateClientProvider, () => weaviateClientProvider);
+  container.registerSingleton(TOKENS.WeaviateConnectionManager, () => weaviateConnectionManager);
   container.registerSingleton(TOKENS.VectorDatabaseService, () => new WeaviateVectorDatabase());
   container.registerSingleton(TOKENS.WeaviateService, () => new WeaviateVectorDatabase());
   

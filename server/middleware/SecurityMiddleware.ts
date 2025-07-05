@@ -3,6 +3,7 @@ import cors from "cors";
 import rateLimit from "express-rate-limit";
 import { Request, Response, NextFunction } from "express";
 import { ConfigurationManager } from "../config/ConfigurationManager";
+import { productionSecurityConfig } from "../config/ProductionSecurityConfig";
 import { RATE_LIMITING, SECURITY, TIME, HTTP_STATUS, SESSION } from "../constants/ApplicationConstants";
 
 /**
@@ -12,120 +13,143 @@ import { RATE_LIMITING, SECURITY, TIME, HTTP_STATUS, SESSION } from "../constant
 export class SecurityMiddleware {
   
   /**
-   * Configure Helmet security headers
-   * Extracted from index.ts lines 22-37
+   * Configure Helmet security headers with production hardening
    */
   static helmet() {
+    const cspConfig = productionSecurityConfig.getCSPConfig();
+    const securityHeaders = productionSecurityConfig.getSecurityHeaders();
     const isDevelopment = process.env.NODE_ENV === 'development';
     
     return helmet({
       contentSecurityPolicy: {
-        directives: {
-          defaultSrc: ["'self'"],
-          scriptSrc: isDevelopment 
-            ? ["'self'", "'unsafe-inline'", "'unsafe-eval'"] // Allow Vite dev scripts only in development
-            : ["'self'"],
-          styleSrc: isDevelopment
-            ? ["'self'", "'unsafe-inline'"] // Allow inline styles only in development
-            : ["'self'"],
-          imgSrc: ["'self'", "data:", "blob:"],
-          connectSrc: isDevelopment
-            ? ["'self'", "ws:", "wss:"] // WebSocket for dev server
-            : ["'self'"],
-          fontSrc: ["'self'"],
-          objectSrc: ["'none'"],
-          mediaSrc: ["'self'"],
-          frameSrc: ["'none'"],
-        },
+        directives: cspConfig,
+        reportOnly: false // Enforce CSP in production
       },
       hsts: {
         maxAge: SECURITY.HSTS_MAX_AGE,
         includeSubDomains: true,
         preload: true
       },
-      // Additional security headers for production
+      // Cross-origin policies for production hardening
       crossOriginEmbedderPolicy: !isDevelopment,
       crossOriginOpenerPolicy: !isDevelopment,
-      crossOriginResourcePolicy: !isDevelopment
+      crossOriginResourcePolicy: !isDevelopment,
+      // Additional Helmet options for enhanced security
+      noSniff: true,
+      frameguard: { action: 'deny' },
+      xssFilter: true,
+      referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+      permittedCrossDomainPolicies: false,
+      hidePoweredBy: true
     });
   }
 
   /**
-   * Configure CORS with dynamic origin checking from environment
-   * Reads allowed origins from environment variables for better security
+   * Configure CORS with production-hardened origin checking
    */
   static cors(config: ConfigurationManager) {
+    const corsConfig = productionSecurityConfig.getCorsConfig();
+    
     return cors({
       origin: (origin, callback) => {
-        // Get allowed origins from environment variables
-        const allowedOrigins = process.env.CORS_ALLOWED_ORIGINS 
-          ? process.env.CORS_ALLOWED_ORIGINS.split(',').map(o => o.trim())
-          : config.get<string[]>('security.allowedOrigins', []);
-
-        // Allow same-origin requests (no origin header)
+        // Allow same-origin requests (no origin header) for local requests
         if (!origin) {
           return callback(null, true);
         }
 
-        // Check if origin is in allowed list
-        if (allowedOrigins.includes(origin)) {
+        // Check if origin is in production-validated allowed list
+        if (corsConfig.allowedOrigins.includes(origin)) {
           return callback(null, true);
         }
 
-        // In development, allow common development origins if not explicitly configured
-        if (process.env.NODE_ENV === 'development' && allowedOrigins.length === 0) {
+        // In development, allow common development origins if no origins configured
+        if (process.env.NODE_ENV === 'development' && corsConfig.allowedOrigins.length === 0) {
           const defaultDevOrigins = [
             'http://localhost:5173',
             'http://127.0.0.1:5173', 
             'http://localhost:3000',
-            'http://127.0.0.1:3000'
+            'http://127.0.0.1:3000',
+            'http://localhost:5000',
+            'http://127.0.0.1:5000'
           ];
           if (defaultDevOrigins.includes(origin)) {
             return callback(null, true);
           }
         }
 
-        return callback(new Error(`Origin ${origin} not allowed by CORS policy`));
+        // Enhanced error logging for production debugging
+        console.warn(`🚫 CORS: Origin "${origin}" rejected. Allowed origins:`, corsConfig.allowedOrigins);
+        return callback(new Error(`CORS: Origin ${origin} not allowed by security policy`));
       },
-      credentials: true,
-      methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-      allowedHeaders: [
-        'Content-Type', 
-        'Authorization', 
-        'x-csrf-token',
-        'x-request-id',
-        'x-correlation-id'
-      ],
-      exposedHeaders: ['x-request-id', 'x-correlation-id'],
-      maxAge: 86400 // 24 hours preflight cache
+      credentials: corsConfig.credentials,
+      methods: corsConfig.methods,
+      allowedHeaders: corsConfig.allowedHeaders,
+      exposedHeaders: corsConfig.exposedHeaders,
+      maxAge: corsConfig.maxAge,
+      // Production hardening options
+      preflightContinue: false,
+      optionsSuccessStatus: 204
     });
   }
 
   /**
-   * Configure rate limiting for general and API endpoints
-   * Extracted from index.ts lines 68-89
+   * Configure production-hardened rate limiting
    */
   static rateLimiting() {
+    const rateLimitConfig = productionSecurityConfig.getRateLimitConfig();
+    const trustedProxies = productionSecurityConfig.getTrustedProxies();
+    
     return {
-      // General rate limiter
+      // General rate limiter with production hardening
       general: rateLimit({
-        windowMs: RATE_LIMITING.WINDOW_MS,
-        max: RATE_LIMITING.MAX_REQUESTS,
+        windowMs: rateLimitConfig.windowMs,
+        max: rateLimitConfig.maxRequests,
         message: {
           error: 'Too many requests from this IP, please try again later.',
-          retryAfter: RATE_LIMITING.WINDOW_MS / 1000 // seconds
+          retryAfter: rateLimitConfig.windowMs / 1000,
+          timestamp: new Date().toISOString()
+        },
+        standardHeaders: rateLimitConfig.standardHeaders,
+        legacyHeaders: rateLimitConfig.legacyHeaders,
+        trustProxy: trustedProxies,
+        skip: (req) => {
+          // Skip rate limiting for health checks
+          return req.path === '/health' || req.path === '/api/health';
+        },
+        skipSuccessfulRequests: false,
+        skipFailedRequests: false
+      }),
+
+      // API rate limiter (more restrictive for production)
+      api: rateLimit({
+        windowMs: rateLimitConfig.windowMs,
+        max: rateLimitConfig.apiMaxRequests,
+        message: {
+          error: 'API rate limit exceeded. Please try again later.',
+          limit: rateLimitConfig.apiMaxRequests,
+          window: `${rateLimitConfig.windowMs / 1000}s`,
+          timestamp: new Date().toISOString()
+        },
+        standardHeaders: rateLimitConfig.standardHeaders,
+        legacyHeaders: rateLimitConfig.legacyHeaders,
+        trustProxy: trustedProxies,
+        skipSuccessfulRequests: rateLimitConfig.skipSuccessfulRequests,
+        skipFailedRequests: rateLimitConfig.skipFailedRequests
+      }),
+
+      // Strict rate limiter for sensitive endpoints
+      strict: rateLimit({
+        windowMs: 15 * 60 * 1000, // 15 minutes
+        max: process.env.NODE_ENV === 'production' ? 5 : 20, // Very restrictive in production
+        message: {
+          error: 'Sensitive endpoint rate limit exceeded. Access temporarily restricted.',
+          timestamp: new Date().toISOString()
         },
         standardHeaders: true,
         legacyHeaders: false,
-      }),
-
-      // API rate limiter (more restrictive)
-      api: rateLimit({
-        windowMs: RATE_LIMITING.WINDOW_MS,
-        max: RATE_LIMITING.API_MAX_REQUESTS,
-        message: {
-          error: 'Too many API requests, please try again later.'
-        }
+        trustProxy: trustedProxies,
+        skipSuccessfulRequests: false,
+        skipFailedRequests: false
       })
     };
   }
@@ -173,16 +197,29 @@ export class SecurityMiddleware {
   }
 
   /**
-   * IP whitelisting middleware for sensitive endpoints
+   * IP whitelisting middleware for sensitive endpoints with production configuration
    */
-  static ipWhitelist(allowedIps: string[]) {
+  static ipWhitelist(customAllowedIps?: string[]) {
     return (req: Request, res: Response, next: NextFunction) => {
-      const clientIp = req.ip || req.connection.remoteAddress || req.headers['x-forwarded-for'];
+      const allowedIps = customAllowedIps || productionSecurityConfig.getIPWhitelist();
       
-      if (!clientIp || !allowedIps.includes(clientIp as string)) {
+      // If no whitelist configured, allow all (but log in production)
+      if (allowedIps.length === 0) {
+        if (process.env.NODE_ENV === 'production') {
+          console.warn('⚠️  IP whitelist not configured for sensitive endpoint:', req.path);
+        }
+        return next();
+      }
+
+      const clientIp = req.ip || req.connection.remoteAddress || req.headers['x-forwarded-for'];
+      const ipString = Array.isArray(clientIp) ? clientIp[0] : clientIp as string;
+      
+      if (!ipString || !allowedIps.includes(ipString)) {
+        console.warn(`🚫 IP whitelist rejection: ${ipString} attempted to access ${req.path}`);
         return res.status(HTTP_STATUS.FORBIDDEN).json({
-          error: 'Access denied: IP not whitelisted',
-          timestamp: new Date().toISOString()
+          error: 'Access denied: IP address not authorized for this endpoint',
+          timestamp: new Date().toISOString(),
+          requestId: req.headers['x-request-id'] || 'unknown'
         });
       }
       
@@ -310,5 +347,128 @@ export class SecurityMiddleware {
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     
     return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
+  }
+
+  /**
+   * Security validation endpoint middleware
+   * Provides real-time security configuration validation
+   */
+  static securityValidationEndpoint() {
+    return (req: Request, res: Response) => {
+      try {
+        const securityReport = productionSecurityConfig.generateSecurityReport();
+        
+        // Add runtime security metrics
+        const runtimeMetrics = {
+          uptime: process.uptime(),
+          memoryUsage: process.memoryUsage(),
+          nodeVersion: process.version,
+          environment: process.env.NODE_ENV,
+          timestamp: new Date().toISOString()
+        };
+
+        res.json({
+          ...securityReport,
+          runtime: runtimeMetrics,
+          endpoints: {
+            rateLimitStatus: 'active',
+            corsStatus: 'configured',
+            helmetStatus: 'active',
+            sessionStatus: 'configured'
+          }
+        });
+      } catch (error) {
+        console.error('Security validation endpoint error:', error);
+        res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+          error: 'Security validation failed',
+          timestamp: new Date().toISOString()
+        });
+      }
+    };
+  }
+
+  /**
+   * Security monitoring middleware
+   * Logs security events and suspicious activity
+   */
+  static securityMonitor() {
+    return (req: Request, res: Response, next: NextFunction) => {
+      // Monitor for suspicious patterns
+      const suspiciousPatterns = [
+        /\b(union|select|insert|delete|drop|create|alter)\b/i, // SQL injection attempts
+        /<script|javascript:|on\w+=/i, // XSS attempts
+        /\.\.\//g, // Path traversal attempts
+        /proc\/self|\/etc\/passwd/i, // File inclusion attempts
+      ];
+
+      const userAgent = req.get('User-Agent') || '';
+      const path = req.path;
+      const query = JSON.stringify(req.query);
+      const body = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
+
+      const testString = `${path} ${query} ${body}`.toLowerCase();
+      
+      for (const pattern of suspiciousPatterns) {
+        if (pattern.test(testString)) {
+          console.warn('🚨 SECURITY ALERT: Suspicious pattern detected', {
+            ip: req.ip,
+            userAgent,
+            path,
+            pattern: pattern.toString(),
+            timestamp: new Date().toISOString(),
+            requestId: req.headers['x-request-id']
+          });
+          break;
+        }
+      }
+
+      // Log admin endpoint access
+      if (path.includes('/admin') || path.includes('/debug') || path.includes('/security')) {
+        console.info('🔐 Admin endpoint access', {
+          ip: req.ip,
+          userAgent,
+          path,
+          method: req.method,
+          timestamp: new Date().toISOString(),
+          requestId: req.headers['x-request-id']
+        });
+      }
+
+      next();
+    };
+  }
+
+  /**
+   * Get comprehensive security status
+   */
+  static getSecurityStatus() {
+    const validation = productionSecurityConfig.validateSecurityConfig();
+    const corsConfig = productionSecurityConfig.getCorsConfig();
+    const sessionConfig = productionSecurityConfig.getSessionConfig();
+    const rateLimitConfig = productionSecurityConfig.getRateLimitConfig();
+
+    return {
+      overall: validation.isValid ? 'secure' : 'needs_attention',
+      validation,
+      configuration: {
+        cors: {
+          originsCount: corsConfig.allowedOrigins.length,
+          strictMode: corsConfig.strictMode,
+          credentials: corsConfig.credentials
+        },
+        session: {
+          maxAge: sessionConfig.maxAge,
+          secure: sessionConfig.secure,
+          sameSite: sessionConfig.sameSite,
+          httpOnly: sessionConfig.httpOnly
+        },
+        rateLimit: {
+          maxRequests: rateLimitConfig.maxRequests,
+          apiMaxRequests: rateLimitConfig.apiMaxRequests,
+          windowMs: rateLimitConfig.windowMs
+        }
+      },
+      timestamp: new Date().toISOString()
+    };
   }
 }

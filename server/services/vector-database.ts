@@ -4,7 +4,7 @@ import * as zlib from 'zlib';
 import { promisify } from 'util';
 import { v4 as uuidv4 } from 'uuid';
 import { ConfigurationManager } from '../config/ConfigurationManager';
-import { weaviateClient } from './weaviate-client';
+import { weaviateConnectionManager } from './WeaviateConnectionManager';
 import type { WeaviateClient } from 'weaviate-client';
 
 const gzip = promisify(zlib.gzip);
@@ -29,7 +29,6 @@ export interface ShardInfo {
 }
 
 export class WeaviateVectorDatabase {
-  private client?: WeaviateClient;
   private className: string;
   private isInitialized = false;
   private documents = new Map<string, VectorDocument>();
@@ -45,19 +44,30 @@ export class WeaviateVectorDatabase {
 
   private async initializeClient() {
     try {
-      await weaviateClient.initialize();
-      
-      if (weaviateClient.isReady()) {
-        this.client = weaviateClient.getClient();
-        await this.initializeSchema();
-        this.isInitialized = true;
-        console.log('Weaviate vector database initialized successfully');
-      } else {
-        throw new Error('Weaviate client failed initialization');
+      // Connection manager should already be initialized from server startup
+      if (!weaviateConnectionManager) {
+        throw new Error('Weaviate Connection Manager not available');
       }
+
+      // Test connection using the connection manager
+      await weaviateConnectionManager.executeWithConnection(
+        async (client) => {
+          const isReady = await client.isReady();
+          if (!isReady) {
+            throw new Error('Weaviate client not ready');
+          }
+          // Connection managed by connection manager - no client storage needed
+          return true;
+        },
+        'initialize-vector-database'
+      );
+
+      await this.initializeSchema();
+      this.isInitialized = true;
+      console.log('✅ Weaviate vector database initialized with connection pooling');
     } catch (error) {
-      console.error('Failed to initialize Weaviate client:', error);
-      console.log('Falling back to in-memory vector storage');
+      console.error('Failed to initialize Weaviate vector database:', error);
+      console.log('⚠️  Falling back to in-memory vector storage');
       this.initializeFallbackMode();
     }
   }
@@ -70,61 +80,67 @@ export class WeaviateVectorDatabase {
   }
 
   private async initializeSchema() {
-    if (!this.client) return;
-    
-    const schemaExists = await this.client.schema
-      .classGetter()
-      .withClassName(this.className)
-      .do()
-      .catch(() => null);
+    return await weaviateConnectionManager.executeWithConnection(
+      async (client) => {
+        const collections = await client.collections.listAll();
+        const schemaExists = collections[this.className];
 
-    if (!schemaExists) {
-      const classObj = {
-        class: this.className,
-        description: 'Prompt engineering documents with biometric context',
-        vectorizer: 'none',
-        properties: [
-          {
-            name: 'content',
-            dataType: ['text'],
-            description: 'The content of the document'
-          },
-          {
-            name: 'contentType',
-            dataType: ['text'],
-            description: 'Type of content (prompt, response, biometric, etc.)'
-          },
-          {
-            name: 'userId',
-            dataType: ['int'],
-            description: 'User ID associated with the document'
-          },
-          {
-            name: 'sessionId',
-            dataType: ['int'],
-            description: 'Session ID associated with the document'
-          },
-          {
-            name: 'timestamp',
-            dataType: ['number'],
-            description: 'Timestamp when document was created'
-          },
-          {
-            name: 'cognitiveComplexity',
-            dataType: ['number'],
-            description: 'Cognitive complexity score of the content'
-          },
-          {
-            name: 'biometricContext',
-            dataType: ['text'],
-            description: 'JSON string of biometric context data'
-          }
-        ]
-      };
+        if (!schemaExists) {
+          const classObj = {
+            class: this.className,
+            description: 'Prompt engineering documents with biometric context',
+            vectorizer: 'none',
+            properties: [
+              {
+                name: 'content',
+                dataType: ['text'],
+                description: 'The content of the document'
+              },
+              {
+                name: 'contentType',
+                dataType: ['text'],
+                description: 'Type of content (prompt, response, biometric, etc.)'
+              },
+              {
+                name: 'userId',
+                dataType: ['int'],
+                description: 'User ID associated with the document'
+              },
+              {
+                name: 'sessionId',
+                dataType: ['int'],
+                description: 'Session ID associated with the document'
+              },
+              {
+                name: 'timestamp',
+                dataType: ['number'],
+                description: 'Timestamp when document was created'
+              },
+              {
+                name: 'cognitiveComplexity',
+                dataType: ['number'],
+                description: 'Cognitive complexity score of the content'
+              },
+              {
+                name: 'biometricContext',
+                dataType: ['text'],
+                description: 'JSON string of biometric context data'
+              }
+            ]
+          };
 
-      await this.client!.schema.classCreator().withClass(classObj).do();
-      console.log(`Created Weaviate class: ${this.className}`);
-    }
+          await client.collections.create({
+            name: classObj.class,
+            description: classObj.description,
+            properties: classObj.properties,
+            vectorizers: classObj.vectorizer ? { default: classObj.vectorizer } : undefined
+          });
+          console.log(`📊 Created Weaviate schema: ${this.className}`);
+        }
+        return true;
+      },
+      'initialize-schema'
+    );
   }
 
   /**
@@ -187,15 +203,21 @@ export class WeaviateVectorDatabase {
           JSON.stringify(document.metadata.biometricContext) : null
       };
 
-      // Store in Weaviate
-      await this.client!.data
-        .creator()
-        .withClassName(this.className)
-        .withId(documentId)
-        .withProperties(weaviateData)
-        .do();
+      // Store in Weaviate using connection manager
+      await weaviateConnectionManager.executeWithConnection(
+        async (client) => {
+          await client.data
+            .creator()
+            .withClassName(this.className)
+            .withId(documentId)
+            .withProperties(weaviateData)
+            .do();
+          return true;
+        },
+        'store-document'
+      );
 
-      console.log(`Stored document ${documentId} in Weaviate`);
+      console.log(`📊 Stored document ${documentId} in Weaviate via connection pool`);
       return documentId;
 
     } catch (error) {
@@ -405,10 +427,11 @@ export class WeaviateVectorDatabase {
     version?: string;
     documentsCount: number;
     shardsCount: number;
+    poolStats?: any;
     error?: string;
   }> {
     try {
-      if (!this.client) {
+      if (!this.isInitialized) {
         return {
           connected: false,
           mode: 'fallback',
@@ -417,30 +440,54 @@ export class WeaviateVectorDatabase {
         };
       }
 
-      const metaInfo = await this.client.misc.metaGetter().do();
+      // Get connection pool health status
+      const poolHealth = await weaviateConnectionManager.healthCheck();
       
-      // Get document count from Weaviate
-      const aggregate = await this.client.graphql
-        .aggregate()
-        .withClassName(this.className)
-        .withFields('meta { count }')
-        .do();
+      if (!poolHealth.healthy) {
+        return {
+          connected: false,
+          mode: 'fallback',
+          documentsCount: this.documents.size,
+          shardsCount: this.shards.size,
+          poolStats: poolHealth.poolStats,
+          error: poolHealth.details
+        };
+      }
 
-      const documentsCount = aggregate?.data?.Aggregate?.[this.className]?.[0]?.meta?.count || 0;
+      // Get Weaviate info using connection manager
+      const result = await weaviateConnectionManager.executeWithConnection(
+        async (client) => {
+          const metaInfo = await client.misc.metaGetter().do();
+          
+          // Get document count from Weaviate
+          const collection = client.collections.get(this.className);
+          const aggregate = await collection.aggregate.overAll();
+          const documentsCount = aggregate.totalCount || 0;
+
+          return {
+            version: metaInfo.version,
+            documentsCount
+          };
+        },
+        'get-connection-status'
+      );
 
       return {
         connected: true,
         mode: 'weaviate',
-        version: metaInfo.version,
-        documentsCount,
+        version: result?.version,
+        documentsCount: result?.documentsCount || 0,
         shardsCount: 1, // Weaviate manages sharding automatically
+        poolStats: poolHealth.poolStats
       };
     } catch (error) {
+      const poolStats = await weaviateConnectionManager.healthCheck();
       return {
         connected: false,
-        mode: this.client ? 'weaviate' : 'fallback',
+        mode: 'fallback',
         documentsCount: this.documents.size,
         shardsCount: this.shards.size,
+        poolStats: poolStats.poolStats,
         error: error instanceof Error ? error.message : 'Unknown error'
       };
     }

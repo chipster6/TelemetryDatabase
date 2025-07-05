@@ -462,32 +462,31 @@ export class WeaviateService {
       }
 
       const client = this.getClient();
-      const result = await client.graphql
-        .get()
-        .withClassName('Conversation')
-        .withFields(`
-          conversationId
-          userMessage
-          aiResponse
-          effectivenessScore
-          responseStrategy
-          heartRate
-          stressLevel
-          attentionLevel
-          cognitiveLoad
-          flowState
-          hyperfocusState
-          executiveFunction
-        `)
-        .withWhere({
+      const collection = client.collections.get('Conversation');
+      const result = await collection.query.fetchObjects({
+        select: [
+          'conversationId',
+          'userMessage', 
+          'aiResponse',
+          'effectivenessScore',
+          'responseStrategy',
+          'heartRate',
+          'stressLevel',
+          'attentionLevel',
+          'cognitiveLoad',
+          'flowState',
+          'hyperfocusState',
+          'executiveFunction'
+        ],
+        where: whereConditions.length > 0 ? {
           operator: 'And',
           operands: whereConditions
-        })
-        .withSort([{ path: ['effectivenessScore'], order: 'desc' }])
-        .withLimit(limit)
-        .do();
+        } : undefined,
+        sort: [{ path: ['effectivenessScore'], order: 'desc' }],
+        limit: limit
+      });
 
-      return result?.data?.Get?.Conversation || [];
+      return result.objects || [];
       
     } catch (error) {
       console.error('Failed to search by biometric state:', error);
@@ -1182,9 +1181,9 @@ export class WeaviateService {
     try {
       const client = this.getClient();
       const [conversationStats, memoryStats, patternStats, schemaStats] = await Promise.all([
-        client.graphql.aggregate().withClassName('Conversation').withFields('meta { count }').do(),
-        client.graphql.aggregate().withClassName('Memory').withFields('meta { count }').do(),
-        client.graphql.aggregate().withClassName('BiometricPattern').withFields('meta { count }').do(),
+        client.collections.get('Conversation').aggregate.overAll(),
+        client.collections.get('Memory').aggregate.overAll(),
+        client.collections.get('BiometricPattern').aggregate.overAll(),
         this.getSchemaStatsInternal()
       ]);
 
@@ -1196,9 +1195,9 @@ export class WeaviateService {
         dataStore: 'weaviate_first',
         
         // Data counts
-        conversations: conversationStats?.data?.Aggregate?.Conversation?.[0]?.meta?.count || 0,
-        memories: memoryStats?.data?.Aggregate?.Memory?.[0]?.meta?.count || 0,
-        patterns: patternStats?.data?.Aggregate?.BiometricPattern?.[0]?.meta?.count || 0,
+        conversations: conversationStats?.totalCount || 0,
+        memories: memoryStats?.totalCount || 0,
+        patterns: patternStats?.totalCount || 0,
         
         // Schema info
         schema: schemaStats,

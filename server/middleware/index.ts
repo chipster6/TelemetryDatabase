@@ -38,17 +38,26 @@ export class MiddlewareManager {
    * Apply all security middleware in correct order
    */
   static applySecurity(app: any, config: any) {
+    // Security monitoring (should be early in the chain)
+    app.use(SecurityMiddleware.securityMonitor());
+    
     // Basic security headers
     app.use(SecurityMiddleware.helmet());
     app.use(SecurityMiddleware.securityHeaders());
     
-    // CORS configuration
+    // CORS configuration with production hardening
     app.use(SecurityMiddleware.cors(config));
     
-    // Rate limiting
+    // Rate limiting with production configuration
     const rateLimiters = SecurityMiddleware.rateLimiting();
     app.use(rateLimiters.general);
     app.use('/api', rateLimiters.api);
+    
+    // Security validation endpoint (IP-restricted)
+    app.get('/api/security/status', 
+      SecurityMiddleware.ipWhitelist(),
+      SecurityMiddleware.securityValidationEndpoint()
+    );
     
     return app;
   }
